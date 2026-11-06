@@ -1,16 +1,90 @@
 """The official Python library for the Mechanical AI API.
 
-The client is under development. The surface will be:
+::
 
     import mechanicalai
 
-    client = mechanicalai.Client()  # reads MECHANICALAI_API_KEY
-    run = client.runs.create(problem="...", files=[...], budget=40)
-    run.wait(on_progress=print)
-    run.results.download("./out")
+    client = mechanicalai.Client()                       # reads MECHANICALAI_API_KEY
+    project = client.projects.create(name="Motor bracket, line 3")
+    plate = client.files.upload(project.id, "mounting-plate.step")
+    run = client.runs.create(project.id, engine="mekint", files=[plate.id], budget_cents=3000,
+                             problem="Design a steel bracket that mounts the 12 kg motor on the attached plate.")
+    for event in client.runs.stream(run.id):
+        print(event.at, event.text or event.status)
+    for artifact in client.artifacts.list_for_run(run.id):
+        client.artifacts.download(artifact.id, "./out")
+
+Arguments: ``None`` means "not given" and is left out of the request, everywhere except ``projects.update``, where
+``NOT_GIVEN`` is the sentinel and ``name=None`` sends ``null`` to clear the name.
 """
 
-from mechanicalai._client import Client
+from mechanicalai import types, webhooks
+from mechanicalai._base_client import DEFAULT_BASE_URL, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT
+from mechanicalai._client import AsyncClient, Client
+from mechanicalai._exceptions import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    ConflictError,
+    EngineRetiredError,
+    GoneError,
+    IdempotencyAnswerLostError,
+    IdempotencySupersededError,
+    InsufficientCreditsError,
+    InternalServerError,
+    MechanicalAIError,
+    NotFoundError,
+    PaymentRequiredError,
+    PermissionDeniedError,
+    ProjectBusyError,
+    RateLimitError,
+    UnprocessableEntityError,
+    WaitTimeoutError,
+    WebhookSignatureError,
+)
+from mechanicalai._files import FileInput
+from mechanicalai._streaming import AsyncRunEventStream, RunEventStream
+from mechanicalai._version import __version__
+from mechanicalai.pagination import AsyncPage, SyncPage
+from mechanicalai.resources._base import NOT_GIVEN, NotGiven
 
-__version__ = "0.0.2"
-__all__ = ["Client", "__version__"]
+__all__ = [
+    "DEFAULT_BASE_URL",
+    "DEFAULT_MAX_RETRIES",
+    "DEFAULT_TIMEOUT",
+    "NOT_GIVEN",
+    "APIConnectionError",
+    "APIStatusError",
+    "APITimeoutError",
+    "AsyncClient",
+    "AsyncPage",
+    "AsyncRunEventStream",
+    "AuthenticationError",
+    "BadRequestError",
+    "Client",
+    "ConflictError",
+    "EngineRetiredError",
+    "FileInput",
+    "GoneError",
+    "IdempotencyAnswerLostError",
+    "IdempotencySupersededError",
+    "InsufficientCreditsError",
+    "InternalServerError",
+    "MechanicalAIError",
+    "NotFoundError",
+    "NotGiven",
+    "PaymentRequiredError",
+    "PermissionDeniedError",
+    "ProjectBusyError",
+    "RateLimitError",
+    "RunEventStream",
+    "SyncPage",
+    "UnprocessableEntityError",
+    "WaitTimeoutError",
+    "WebhookSignatureError",
+    "__version__",
+    "types",
+    "webhooks",
+]

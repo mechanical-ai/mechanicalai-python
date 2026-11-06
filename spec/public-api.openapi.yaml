@@ -1,0 +1,1366 @@
+# Copied from the Mechanical AI API contract on 2026-11-06; replaced by a pinned fetch once the API is published.
+openapi: 3.1.0
+info:
+  title: Mechanical AI API
+  version: "1.0.0-draft"
+  summary: An engineering problem solver with memory, on the MEKINT engine.
+  description: |
+    The public API: projects as durable containers, runs as jobs on them, files in, artifacts out, progress as
+    events. The reference documentation is at https://mechanicalai.com/docs; this file is the exact surface.
+
+    Conventions that OpenAPI cannot express per response:
+    - Every answer carries `X-Request-ID` (`[A-Za-z0-9._:-]{1,64}`); a caller may send one of that shape.
+    - Money is integer US cents in fields named `*_cents`. Ids are opaque, random, prefixed strings.
+    - Lists are paged with `limit` and `after` (the previous page's `next_cursor`, exclusive); newest first,
+      except run events, which ascend by sequence number.
+    - Rate limits are per key and enforced at the edge: 429 `rate_limited` with `Retry-After`; no
+      `X-RateLimit-*` headers are sent.
+    - `Idempotency-Key`: 1 to 64 characters of `[A-Za-z0-9._:-]`, scoped
+      to the account for 24 hours, fingerprinted by method, route, path, query and body; replays carry
+      `Idempotent-Replayed: true`. Only 2xx, 400, 403, 404 and 422 answers are replayed; any other answer lets
+      the same key run the request anew. A 409 names one of `idempotency_conflict` (same key, different request),
+      `idempotency_in_progress` (resend the same request after `Retry-After`, 2 s), `idempotency_answer_lost`
+      (the write happened; read the resource, never resend with a new key) or `idempotency_superseded` (a
+      concurrent retry's answer stands; read it).
+    - When several refusals apply, the first of 503 `server_preparing`, 401, 404, 400, 413, 402, 409, 429 wins.
+  contact:
+    name: Mechanical AI
+    url: https://mechanicalai.com
+    email: contact@mechanicalai.com
+  license:
+    name: Terms of Service
+    url: https://mechanicalai.com/terms
+servers:
+  - url: https://api.mechanicalai.com/v1
+security:
+  - apiKey: []
+tags:
+  - name: engines
+  - name: projects
+  - name: files
+  - name: runs
+  - name: events
+  - name: artifacts
+  - name: usage
+
+paths:
+  /engines:
+    get:
+      tags: [engines]
+      operationId: listEngines
+      summary: List the engines this key may use
+      responses:
+        "200":
+          description: The engines. At launch, the alias `mekint` and the snapshot it points to.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngineList"
+              example:
+                object: list
+                data:
+                  - id: mekint
+                    object: engine
+                    snapshot: mekint-20261105
+                    status: current
+                    released_at: "2026-11-05T00:00:00Z"
+                has_more: false
+                next_cursor: null
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /projects:
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreate"
+            example:
+              name: Motor bracket, line 3
+              metadata: { ticket: ENG-4471 }
+      responses:
+        "201":
+          description: The project.
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+              examples:
+                default: { $ref: "#/components/examples/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: The account is at its project limit, or an idempotency conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                limit: { $ref: "#/components/examples/ProjectLimit" }
+                idempotency: { $ref: "#/components/examples/IdempotencyConflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List projects made through the API, newest first
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
+      responses:
+        "200":
+          description: A page of projects.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /projects/{project_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Retrieve a project
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+              examples:
+                default: { $ref: "#/components/examples/Project" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Rename a project or replace its metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectUpdate" }
+      responses:
+        "200":
+          description: The project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a project and everything in it
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: A run is live on the project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                busy: { $ref: "#/components/examples/ProjectBusy" }
+
+  /projects/{project_id}/files:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [files]
+      operationId: uploadFile
+      summary: Upload a file (multipart, up to 64 MB)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+                  maxLength: 255
+                  description: Overrides the uploaded filename.
+      responses:
+        "201":
+          description: The file, ready.
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+              examples:
+                default: { $ref: "#/components/examples/File" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StorageLimit" }
+        "413":
+          description: Larger than the multipart limit; use an upload URL.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error: { type: invalid_request_error, code: file_too_large, message: "Multipart uploads are limited to 64 MB; use an upload URL.", param: file, request_id: req_01jc4x0m }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [files]
+      operationId: listFiles
+      summary: List a project's files
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
+      responses:
+        "200":
+          description: A page of files.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{project_id}/files/upload-url:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [files]
+      operationId: createUploadUrl
+      summary: Get a signed URL for a direct upload (any size)
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UploadUrlCreate" }
+            example:
+              name: mounting-plate.step
+              size: 39845120
+              content_type: model/step
+              digest: "sha256:9f2c6c1e7a0b4d3f2e1a9c8b7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e"
+      responses:
+        "201":
+          description: The pending file and where to PUT its bytes (at most `size` of them).
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadUrl" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/StorageLimit" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /files/{file_id}:
+    parameters:
+      - $ref: "#/components/parameters/FileId"
+    get:
+      tags: [files]
+      operationId: getFile
+      summary: Retrieve a file
+      responses:
+        "200":
+          description: The file.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [files]
+      operationId: deleteFile
+      summary: Delete a file
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The file is attached to a live run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error: { type: conflict_error, code: file_in_use, message: "The file is attached to a live run.", param: null, request_id: req_01jc4x0n }
+
+  /files/{file_id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/FileId"
+    post:
+      tags: [files]
+      operationId: completeFile
+      summary: Mark a direct upload complete
+      description: Checks the stored object's size and, when a digest was declared, its digest. On a file that is already `ready`, answers it unchanged.
+      responses:
+        "200":
+          description: The file, ready.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/File" }
+        "400":
+          description: The bytes are missing, or do not match the declared size or digest.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /files/{file_id}/download:
+    parameters:
+      - $ref: "#/components/parameters/FileId"
+    get:
+      tags: [files]
+      operationId: downloadFile
+      summary: Get a short-lived download link (served as an attachment)
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadLink" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{project_id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [runs]
+      operationId: createRun
+      summary: Start a run on a project
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunCreate" }
+            examples:
+              default: { $ref: "#/components/examples/RunCreate" }
+      responses:
+        "202":
+          description: The run, queued.
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+              examples:
+                default: { $ref: "#/components/examples/RunQueued" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The project has a live run, the account is over its storage quota, or an idempotency conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                busy: { $ref: "#/components/examples/ProjectBusy" }
+                idempotency: { $ref: "#/components/examples/IdempotencyConflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+    get:
+      tags: [runs]
+      operationId: listRuns
+      summary: List a project's runs, newest first
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
+      responses:
+        "200":
+          description: A page of runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /runs:
+    post:
+      tags: [runs]
+      operationId: createRunInNewOrNamedProject
+      summary: Start a run, creating a project when none is named
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/RunCreate"
+                - type: object
+                  properties:
+                    project_id:
+                      type: string
+                      description: An existing API-made project; omitted, a new project is created and named by the engine.
+      responses:
+        "202":
+          description: The run, queued; `project_id` names the project used or created.
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The project has a live run, the account is at its project limit or over its storage quota, or an idempotency conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                busy: { $ref: "#/components/examples/ProjectBusy" }
+                limit: { $ref: "#/components/examples/ProjectLimit" }
+                idempotency: { $ref: "#/components/examples/IdempotencyConflict" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /runs/{run_id}:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [runs]
+      operationId: getRun
+      summary: Retrieve a run
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+              examples:
+                default: { $ref: "#/components/examples/RunSucceeded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /runs/{run_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    post:
+      tags: [runs]
+      operationId: cancelRun
+      summary: Cancel a run
+      description: A queued run is cancelled at once with `cost_cents` 0; a running run is marked cancelled at once and its live tool run killed, charged for the window it ran.
+      responses:
+        "200":
+          description: The run, cancelled (`cancel_requested` may still read true for the moment before the row updates).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The run has already ended.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error: { type: conflict_error, code: run_finished, message: "The run has already ended.", param: null, request_id: req_01jc4x0b }
+
+  /runs/{run_id}/reply:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    post:
+      tags: [runs]
+      operationId: replyToRun
+      summary: Answer a run's question
+      description: |
+        Only for a run in `needs_input`, once. Starts a new run on the same project with `parent_run_id` set,
+        inheriting `engine`, `units`, `language`, `allow_web`, `end_user`, `metadata` and `webhook_url`; `files`
+        are added to the parent's; `budget_cents` defaults to the parent's.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunReply" }
+            example: { text: "Steel, 10 mm.", budget_cents: 2000 }
+      responses:
+        "202":
+          description: The new run, queued.
+          headers:
+            Idempotent-Replayed: { $ref: "#/components/headers/IdempotentReplayed" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { $ref: "#/components/responses/PaymentRequired" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The run is not waiting for input (or was already answered), the project has a live run, or an idempotency conflict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error: { type: conflict_error, code: run_not_waiting, message: "The run is not waiting for input.", param: null, request_id: req_01jc4x0c }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /runs/{run_id}/events:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [events]
+      operationId: listRunEvents
+      summary: List a run's progress events, ascending by sequence
+      parameters:
+        - name: after
+          in: query
+          description: The previous page's `next_cursor` (a sequence number); events after it are returned.
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: A page of events in sequence order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunEventList" }
+              example:
+                object: list
+                data:
+                  - { id: evt_01jc5001, object: run_event, run_id: run_01jc5000a1b2, seq: 1, at: "2026-11-06T10:02:08Z", kind: status, status: running }
+                  - { id: evt_01jc5002, object: run_event, run_id: run_01jc5000a1b2, seq: 2, at: "2026-11-06T10:02:08Z", kind: phase, phase: thinking }
+                  - { id: evt_01jc5003, object: run_event, run_id: run_01jc5000a1b2, seq: 3, at: "2026-11-06T10:02:11Z", kind: progress, text: "Reading the plate and the load cases." }
+                  - { id: evt_01jc5004, object: run_event, run_id: run_01jc5000a1b2, seq: 4, at: "2026-11-06T10:05:40Z", kind: task, text: "Running the static study at 3x load", percent: 65, eta_s: 50 }
+                has_more: true
+                next_cursor: "4"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /runs/{run_id}/events/stream:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [events]
+      operationId: streamRunEvents
+      summary: Stream a run's events as server-sent events
+      description: |
+        `text/event-stream`. Each event is sent as `id: <seq>`, `event: <kind>` and a JSON `data:` line holding a
+        RunEvent. A comment line is sent every 15 seconds as keep-alive. The stream closes after the terminal
+        `status` event; opened on a run that already ended, it replays every event and closes. Send
+        `Last-Event-ID` (a sequence number) to resume after a disconnect without a gap.
+      parameters:
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: The sequence number of the last event received.
+          schema: { type: string, pattern: "^[0-9]+$" }
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                id: 3
+                event: progress
+                data: {"id":"evt_01jc5003","object":"run_event","run_id":"run_01jc5000a1b2","seq":3,"at":"2026-11-06T10:02:11Z","kind":"progress","text":"Reading the plate and the load cases."}
+
+                : keep-alive
+
+                id: 9
+                event: status
+                data: {"id":"evt_01jc5009","object":"run_event","run_id":"run_01jc5000a1b2","seq":9,"at":"2026-11-06T10:11:30Z","kind":"status","status":"succeeded"}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /runs/{run_id}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [artifacts]
+      operationId: listRunArtifacts
+      summary: List what a run produced
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+      responses:
+        "200":
+          description: The run's artifacts (not paged; a run produces a handful).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactList" }
+              examples:
+                default: { $ref: "#/components/examples/ArtifactList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /projects/{project_id}/artifacts:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [artifacts]
+      operationId: listProjectArtifacts
+      summary: List everything a project's runs produced, newest first
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - name: run_id
+          in: query
+          schema: { type: string }
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/After"
+      responses:
+        "200":
+          description: A page of artifacts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /artifacts/{artifact_id}:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [artifacts]
+      operationId: getArtifact
+      summary: Retrieve an artifact
+      responses:
+        "200":
+          description: The artifact.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Artifact" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [artifacts]
+      operationId: deleteArtifact
+      summary: Delete an artifact
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /artifacts/{artifact_id}/download:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [artifacts]
+      operationId: downloadArtifact
+      summary: Get a short-lived download link in a format (served as an attachment)
+      parameters:
+        - name: format
+          in: query
+          description: One of the artifact's `formats`; defaults to `default_format`.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DownloadLink" }
+              example:
+                url: "https://storage.googleapis.com/example-bucket/example-object?response-content-disposition=attachment&X-Goog-Signature=0123abcd"
+                expires_at: "2026-11-06T10:25:00Z"
+                format: step
+                content_type: model/step
+                size: 2306215
+        "202":
+          description: The format is being composed (once per artifact and format, then kept); ask again after `retry_after` seconds.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, retry_after]
+                properties:
+                  status: { type: string, const: preparing }
+                  retry_after: { type: integer }
+              example: { status: preparing, retry_after: 5 }
+        "400":
+          description: Not one of the artifact's formats.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /usage:
+    get:
+      tags: [usage]
+      operationId: getUsage
+      summary: The account's API usage
+      parameters:
+        - name: period
+          in: query
+          schema: { type: string, enum: [day, month], default: month }
+        - name: from
+          in: query
+          description: Snapped to the start of its UTC period; defaults to the current period.
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          description: Snapped up to the end of its UTC period; exclusive. Defaults to the end of the current period.
+          schema: { type: string, format: date-time }
+        - name: group_by
+          in: query
+          schema: { type: string, enum: [end_user] }
+      responses:
+        "200":
+          description: Usage.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Usage" }
+              example:
+                object: usage
+                period: month
+                from: "2026-11-01T00:00:00Z"
+                to: "2026-12-01T00:00:00Z"
+                runs: 14
+                cost_cents: 41260
+                buckets:
+                  - { from: "2026-11-01T00:00:00Z", to: "2026-12-01T00:00:00Z", runs: 14, cost_cents: 41260 }
+                by_end_user:
+                  plant-3: { runs: 11, cost_cents: 31810 }
+                  plant-7: { runs: 3, cost_cents: 9450 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /limits:
+    get:
+      tags: [usage]
+      operationId: getLimits
+      summary: The account's limits and current counts
+      responses:
+        "200":
+          description: Limits.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Limits" }
+              examples:
+                default: { $ref: "#/components/examples/Limits" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+webhooks:
+  runTerminal:
+    post:
+      summary: Posted to a run's `webhook_url` on its terminal transition
+      description: |
+        Headers: `Mechanicalai-Event-Id`, `Mechanicalai-Key-Id`, `Mechanicalai-Signature: t=<unix seconds>,v1=<hex
+        HMAC-SHA256 of "<t>.<body>">` signed with the key's webhook secret. Delivered through an outbound
+        address guard (public addresses only, pinned, port 443, no redirects, no credentials, 10-second timeout);
+        retried after 5 s, 1, 5, 15 and 60 minutes (six attempts), signed with the secret current at each send; a
+        2xx acknowledges. Receivers must verify the signature before trusting any header and tolerate a duplicate
+        `Mechanicalai-Event-Id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WebhookEvent" }
+      responses:
+        "200": { description: Acknowledged. }
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: "mk_live_… or mk_test_…"
+
+  parameters:
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^prj_[A-Za-z0-9]+$" }
+    FileId:
+      name: file_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^file_[A-Za-z0-9]+$" }
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^run_[A-Za-z0-9]+$" }
+    ArtifactId:
+      name: artifact_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^art_[A-Za-z0-9]+$" }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    After:
+      name: after
+      in: query
+      description: The previous page's `next_cursor`; exclusive.
+      schema: { type: string }
+    Kind:
+      name: kind
+      in: query
+      schema: { $ref: "#/components/schemas/ArtifactKind" }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 1 to 64 characters of `[A-Za-z0-9._:-]`, unique per account for 24 hours; a repeat with the same fingerprint replays the first answer.
+      schema: { type: string, minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9._:-]{1,64}$" }
+
+  headers:
+    IdempotentReplayed:
+      description: Present and `true` when the answer is a replay of an earlier identical request.
+      schema: { type: boolean }
+
+  responses:
+    BadRequest:
+      description: The request is malformed or a parameter is invalid.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: invalid_request_error, code: budget_too_low, message: "budget_cents must be at least 100.", param: budget_cents, request_id: req_01jc4x0d }
+    Unauthorized:
+      description: The key is missing, malformed, unknown, revoked, or presented on the wrong host. One code for all of them.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: authentication_error, code: invalid_api_key, message: "Invalid API key.", param: null, request_id: req_01jc4x0e }
+    PaymentRequired:
+      description: The wallet cannot cover the budget, or the key's monthly cap is reached.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: payment_required_error, code: insufficient_credit, message: "The API wallet holds $12.40; this run's budget is $30.00.", param: budget_cents, request_id: req_01jc4x0f }
+    NotFound:
+      description: No such object for this account (foreign objects and app-made projects included).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: not_found_error, code: not_found, message: "No such run.", param: null, request_id: req_01jc4x0g }
+    StorageLimit:
+      description: Files per project or the storage quota is reached, or an idempotency conflict.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: conflict_error, code: storage_quota_reached, message: "This account already uses 50 GB of storage, the most allowed. Delete some files or artifacts to add more.", param: null, request_id: req_01jc4x0h, limit: 53687091200, count: 53700000000 }
+    RateLimited:
+      description: Too many requests (from the edge), or too many concurrent runs for this key.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error: { type: rate_limit_error, code: concurrency_limit_reached, message: "This key may hold 2 running runs.", param: null, request_id: req_01jc4x0k, limit: 2, count: 2 }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, code, message, request_id]
+          properties:
+            type:
+              type: string
+              enum: [invalid_request_error, authentication_error, payment_required_error, not_found_error, conflict_error, rate_limit_error, api_error, overloaded_error]
+            code: { type: string }
+            message: { type: string }
+            param: { type: [string, "null"] }
+            request_id: { type: string }
+            limit: { type: integer, description: "On project_limit_reached, file_limit_reached, storage_quota_reached and concurrency_limit_reached." }
+            count: { type: integer, description: "On the same codes." }
+
+    ListMeta:
+      type: object
+      required: [object, has_more, next_cursor]
+      properties:
+        object: { type: string, const: list }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    Engine:
+      type: object
+      required: [id, object, snapshot, status, released_at]
+      properties:
+        id: { type: string, examples: [mekint] }
+        object: { type: string, const: engine }
+        snapshot: { type: string, description: The deployed snapshot the alias points to, by the day it became current. }
+        status: { type: string, enum: [current] }
+        released_at: { type: string, format: date-time }
+    EngineList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Engine" }
+
+    Metadata:
+      type: object
+      description: At most 16 keys; names 1 to 64 characters of `[A-Za-z0-9_.-]`, values up to 512 printable characters. Stored and echoed; never read by the engine, never rendered by the app.
+      maxProperties: 16
+      additionalProperties: { type: string, maxLength: 512 }
+      propertyNames: { pattern: "^[A-Za-z0-9_.-]{1,64}$" }
+
+    ProjectCreate:
+      type: object
+      properties:
+        name: { type: [string, "null"], maxLength: 80 }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+    ProjectUpdate:
+      type: object
+      description: "`metadata` replaces the whole map; `name: null` clears the name."
+      properties:
+        name: { type: [string, "null"], maxLength: 80 }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+    Project:
+      type: object
+      required: [id, object, name, app_url, created_at, updated_at, last_run_at, metadata]
+      properties:
+        id: { type: string }
+        object: { type: string, const: project }
+        name: { type: [string, "null"] }
+        app_url: { type: string, format: uri }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_run_at: { type: [string, "null"], format: date-time }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+    ProjectList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Project" }
+
+    File:
+      type: object
+      required: [id, object, project_id, name, size, content_type, digest, status, created_at, expires_at]
+      properties:
+        id: { type: string }
+        object: { type: string, const: file }
+        project_id: { type: string }
+        name: { type: string }
+        size: { type: integer, minimum: 0 }
+        content_type: { type: string }
+        digest: { type: [string, "null"], description: "sha256:<hex>" }
+        status: { type: string, enum: [uploading, ready] }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time, description: Uploading only; the instant the pending upload is discarded. }
+    FileList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/File" }
+    UploadUrlCreate:
+      type: object
+      required: [name, size, content_type]
+      properties:
+        name: { type: string, maxLength: 255 }
+        size: { type: integer, minimum: 1 }
+        content_type: { type: string }
+        digest: { type: string, pattern: "^sha256:[0-9a-f]{64}$", description: Verified at complete when given. }
+    UploadUrl:
+      type: object
+      required: [file, upload_url, upload_headers, expires_at]
+      properties:
+        file: { $ref: "#/components/schemas/File" }
+        upload_url: { type: string, format: uri, description: PUT the bytes here; at most `size` of them. }
+        upload_headers:
+          type: object
+          additionalProperties: { type: string }
+          description: Headers to send with the PUT.
+        expires_at: { type: string, format: date-time, description: When the PUT URL stops accepting bytes (10 minutes); the file's own expires_at is an hour later. }
+    DownloadLink:
+      type: object
+      required: [url, expires_at, content_type, size]
+      properties:
+        url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+        format: { type: string }
+        content_type: { type: string }
+        size: { type: [integer, "null"] }
+
+    RunStatus:
+      type: string
+      enum: [queued, running, needs_input, succeeded, budget_exhausted, failed, cancelled]
+    RunFailureCode:
+      type: string
+      description: "The engine's run failure codes, with `engine_error` standing for its protocol failures (invalid_tool_arguments, invalid_object_reference, multiple_tool_calls, repair_without_tool_call) and `engine_gave_up` for the engine's own final answer with status failed."
+      enum: [model_unavailable, model_rejected, internal_error, step_budget, tool_call_budget, restarted, engine_error, engine_gave_up]
+    RunCreate:
+      type: object
+      required: [engine, problem, budget_cents]
+      properties:
+        engine: { type: string, examples: [mekint] }
+        problem: { type: string, minLength: 1, maxLength: 50000 }
+        files:
+          type: array
+          items: { type: string }
+          maxItems: 50
+        instructions: { type: string, maxLength: 20000 }
+        units: { type: string, enum: [metric, imperial], default: metric }
+        language: { type: string, enum: [en, ko], default: en }
+        allow_web: { type: boolean, default: false }
+        budget_cents: { type: integer, minimum: 100 }
+        end_user: { type: string, pattern: "^[A-Za-z0-9_.:@-]{1,128}$" }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+        webhook_url: { type: string, format: uri, pattern: "^https://", description: A public https host on port 443; needs the key's webhook secret. }
+    RunReply:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 50000 }
+        files:
+          type: array
+          items: { type: string }
+          maxItems: 50
+          description: Added to the parent run's files.
+        budget_cents: { type: integer, minimum: 100, description: Defaults to the parent run's budget. }
+    Run:
+      type: object
+      required: [id, object, project_id, parent_run_id, engine, engine_version, status, cancel_requested, problem, instructions, files, units, language, allow_web, budget_cents, cost_cents, summary, next_actions, question, failure, report_artifact_id, end_user, metadata, webhook_url, created_at, started_at, finished_at, duration_s]
+      properties:
+        id: { type: string }
+        object: { type: string, const: run }
+        project_id: { type: string }
+        parent_run_id: { type: [string, "null"] }
+        engine: { type: string }
+        engine_version: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        cancel_requested: { type: boolean }
+        problem: { type: string }
+        instructions: { type: [string, "null"] }
+        files:
+          type: array
+          items: { type: string }
+        units: { type: string, enum: [metric, imperial] }
+        language: { type: string, enum: [en, ko] }
+        allow_web: { type: boolean }
+        budget_cents: { type: integer }
+        cost_cents: { type: integer, description: May exceed `budget_cents` by what ran before the 5-second watcher stopped the run. }
+        summary: { type: [string, "null"] }
+        next_actions:
+          type: array
+          items: { type: string }
+        question: { type: [string, "null"] }
+        failure:
+          type: [object, "null"]
+          required: [code, message]
+          properties:
+            code: { $ref: "#/components/schemas/RunFailureCode" }
+            message: { type: string }
+        report_artifact_id: { type: [string, "null"] }
+        end_user: { type: [string, "null"] }
+        metadata: { $ref: "#/components/schemas/Metadata" }
+        webhook_url: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        duration_s: { type: [number, "null"] }
+    RunList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Run" }
+
+    RunEvent:
+      type: object
+      required: [id, object, run_id, seq, at, kind]
+      properties:
+        id: { type: string }
+        object: { type: string, const: run_event }
+        run_id: { type: string }
+        seq: { type: integer, minimum: 1 }
+        at: { type: string, format: date-time }
+        kind: { type: string, enum: [phase, progress, task, note, status] }
+        phase: { type: string, enum: [thinking, working] }
+        text: { type: string }
+        percent: { type: number, minimum: 0, maximum: 100 }
+        eta_s: { type: number, minimum: 0 }
+        status: { $ref: "#/components/schemas/RunStatus" }
+    RunEventList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/RunEvent" }
+
+    ArtifactKind:
+      type: string
+      enum: [report, document, model, table, data, image]
+    Artifact:
+      type: object
+      required: [id, object, project_id, run_id, kind, name, formats, default_format, size, group, created_at]
+      properties:
+        id: { type: string }
+        object: { type: string, const: artifact }
+        project_id: { type: string }
+        run_id: { type: string }
+        kind: { $ref: "#/components/schemas/ArtifactKind" }
+        name: { type: string }
+        formats:
+          type: array
+          items: { type: string }
+          description: "report: md, pdf, docx · document: md, pdf, docx · model: step, stl, glb, native (when the model has one) · table: csv, xlsx · data: vtu, csv, json · image: png"
+        default_format: { type: string }
+        size: { type: [integer, "null"], description: Bytes of the default format, when known. }
+        group: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+    ArtifactList:
+      allOf:
+        - $ref: "#/components/schemas/ListMeta"
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items: { $ref: "#/components/schemas/Artifact" }
+
+    Usage:
+      type: object
+      required: [object, period, from, to, runs, cost_cents, buckets]
+      properties:
+        object: { type: string, const: usage }
+        period: { type: string, enum: [day, month] }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        runs: { type: integer }
+        cost_cents: { type: integer }
+        buckets:
+          type: array
+          items:
+            type: object
+            required: [from, to, runs, cost_cents]
+            properties:
+              from: { type: string, format: date-time }
+              to: { type: string, format: date-time }
+              runs: { type: integer }
+              cost_cents: { type: integer }
+        by_end_user:
+          type: object
+          description: When `group_by` is end_user; runs without an `end_user` are in the totals only.
+          additionalProperties:
+            type: object
+            required: [runs, cost_cents]
+            properties:
+              runs: { type: integer }
+              cost_cents: { type: integer }
+    Limits:
+      type: object
+      required: [object, projects_per_account, files_per_project, files_per_run, storage_bytes, concurrent_runs_per_key, requests_per_minute, upload_bytes_max, problem_chars_max, instructions_chars_max, usage]
+      properties:
+        object: { type: string, const: limits }
+        projects_per_account: { type: integer }
+        files_per_project: { type: integer }
+        files_per_run: { type: integer }
+        storage_bytes: { type: integer }
+        concurrent_runs_per_key: { type: integer }
+        requests_per_minute: { type: integer }
+        upload_bytes_max: { type: integer }
+        problem_chars_max: { type: integer }
+        instructions_chars_max: { type: integer }
+        usage:
+          type: object
+          required: [projects, storage_bytes, running_runs, running_runs_this_key]
+          properties:
+            projects: { type: integer, description: App and API projects alike, as the limit counts them. }
+            storage_bytes: { type: integer }
+            running_runs: { type: integer }
+            running_runs_this_key: { type: integer }
+
+    WebhookEvent:
+      type: object
+      description: The body posted to `webhook_url` on a run's terminal transition.
+      required: [id, object, type, created_at, data]
+      properties:
+        id: { type: string, examples: [wh_01jc5100] }
+        object: { type: string, const: event }
+        type: { type: string, enum: [run.succeeded, run.needs_input, run.budget_exhausted, run.failed, run.cancelled] }
+        created_at: { type: string, format: date-time }
+        data:
+          type: object
+          required: [run]
+          properties:
+            run: { $ref: "#/components/schemas/Run" }
+
+  examples:
+    Project:
+      value:
+        id: prj_01jc4x7m2k9q
+        object: project
+        name: Motor bracket, line 3
+        app_url: https://mekint.com/project/9f1c2a7e-3b7d-4f0e-9a1b-2c3d4e5f6a7b
+        created_at: "2026-11-06T10:01:50Z"
+        updated_at: "2026-11-06T10:01:50Z"
+        last_run_at: null
+        metadata: { ticket: ENG-4471 }
+    File:
+      value:
+        id: file_01jc4y1n8r3t
+        object: file
+        project_id: prj_01jc4x7m2k9q
+        name: mounting-plate.step
+        size: 39845120
+        content_type: model/step
+        digest: "sha256:9f2c6c1e7a0b4d3f2e1a9c8b7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e"
+        status: ready
+        created_at: "2026-11-06T10:02:00Z"
+        expires_at: null
+    ProjectBusy:
+      value:
+        error:
+          type: conflict_error
+          code: project_busy
+          message: "A run is already live on this project; wait for it to end or cancel it."
+          param: null
+          request_id: req_01jc4x0l
+    ProjectLimit:
+      value:
+        error:
+          type: conflict_error
+          code: project_limit_reached
+          message: "This account already has 100 projects, the most allowed. Delete some to add more."
+          param: null
+          request_id: req_01jc4x0a
+          limit: 100
+          count: 100
+    IdempotencyConflict:
+      value:
+        error:
+          type: conflict_error
+          code: idempotency_conflict
+          message: "Idempotency-Key was already used with a different request."
+          param: null
+          request_id: req_01jc4x0j
+    RunCreate:
+      value:
+        engine: mekint
+        problem: "Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. Load cases are in load-cases.xlsx. Keep the bracket under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load and report the safety factor."
+        files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
+        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
+        units: metric
+        language: en
+        allow_web: false
+        budget_cents: 3000
+        end_user: plant-3
+        metadata: { ticket: ENG-4471 }
+    RunQueued:
+      value:
+        id: run_01jc5000a1b2
+        object: run
+        project_id: prj_01jc4x7m2k9q
+        parent_run_id: null
+        engine: mekint
+        engine_version: null
+        status: queued
+        cancel_requested: false
+        problem: "Design a steel bracket that mounts the 12 kg motor …"
+        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
+        files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
+        units: metric
+        language: en
+        allow_web: false
+        budget_cents: 3000
+        cost_cents: 0
+        summary: null
+        next_actions: []
+        question: null
+        failure: null
+        report_artifact_id: null
+        end_user: plant-3
+        metadata: { ticket: ENG-4471 }
+        webhook_url: null
+        created_at: "2026-11-06T10:02:05Z"
+        started_at: null
+        finished_at: null
+        duration_s: null
+    RunSucceeded:
+      value:
+        id: run_01jc5000a1b2
+        object: run
+        project_id: prj_01jc4x7m2k9q
+        parent_run_id: null
+        engine: mekint
+        engine_version: mekint-20261105
+        status: succeeded
+        cancel_requested: false
+        problem: "Design a steel bracket that mounts the 12 kg motor …"
+        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
+        files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
+        units: metric
+        language: en
+        allow_web: false
+        budget_cents: 3000
+        cost_cents: 1420
+        summary: "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz. Peak von Mises 178 MPa at 3x load, safety factor 2.0 against yield. Assumed the motor's centre of mass 60 mm above the plate (not given); the report shows the sensitivity to that height."
+        next_actions: ["Confirm the motor centre-of-mass height.", "Specify the plate material if it is not steel."]
+        question: null
+        failure: null
+        report_artifact_id: art_01jc5201
+        end_user: plant-3
+        metadata: { ticket: ENG-4471 }
+        webhook_url: null
+        created_at: "2026-11-06T10:02:05Z"
+        started_at: "2026-11-06T10:02:08Z"
+        finished_at: "2026-11-06T10:11:30Z"
+        duration_s: 562
+    ArtifactList:
+      value:
+        object: list
+        data:
+          - { id: art_01jc5201, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: report, name: bracket-report, formats: [md, pdf, docx], default_format: md, size: 219136, group: null, created_at: "2026-11-06T10:11:30Z" }
+          - { id: art_01jc5202, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: model, name: bracket, formats: [step, stl, glb, native], default_format: step, size: 2306215, group: null, created_at: "2026-11-06T10:04:17Z" }
+          - { id: art_01jc5203, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: model, name: bracket-on-plate, formats: [step, stl, glb], default_format: step, size: 41943040, group: null, created_at: "2026-11-06T10:04:40Z" }
+          - { id: art_01jc5204, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: table, name: load-cases-results, formats: [csv, xlsx], default_format: csv, size: 6144, group: null, created_at: "2026-11-06T10:08:55Z" }
+          - { id: art_01jc5205, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: data, name: static-3x, formats: [vtu, csv, json], default_format: vtu, size: 18874368, group: null, created_at: "2026-11-06T10:08:55Z" }
+          - { id: art_01jc5206, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: image, name: stress-3x-iso, formats: [png], default_format: png, size: 419840, group: null, created_at: "2026-11-06T10:09:10Z" }
+        has_more: false
+        next_cursor: null
+    Limits:
+      value:
+        object: limits
+        projects_per_account: 100
+        files_per_project: 200
+        files_per_run: 50
+        storage_bytes: 53687091200
+        concurrent_runs_per_key: 2
+        requests_per_minute: 120
+        upload_bytes_max: 67108864
+        problem_chars_max: 50000
+        instructions_chars_max: 20000
+        usage: { projects: 12, storage_bytes: 7340032000, running_runs: 1, running_runs_this_key: 1 }

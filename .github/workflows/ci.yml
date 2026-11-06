@@ -5,16 +5,36 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python: ["3.10", "3.13"]
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      # The Prism mock-server test runs on one interpreter only; the others skip it.
+      MECHANICALAI_SKIP_PRISM: ${{ matrix.python != '3.12' && '1' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python }}
+          enable-cache: true
+      - run: uv sync --all-groups
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
       - run: uv build
       - run: uv run --with dist/*.whl --no-project -- mechanicalai --version

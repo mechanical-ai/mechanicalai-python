@@ -1,0 +1,21 @@
+name: Feature request
+description: Something the library should make easier.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The task, in your words. What you write today to get there.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: The call you wish existed, or the behaviour you expected.
+  - type: markdown
+    attributes:
+      value: |
+        A change to the API itself (a new field, a new route) belongs with the API team: contact@mechanicalai.com.
+        This tracker is for the Python library.

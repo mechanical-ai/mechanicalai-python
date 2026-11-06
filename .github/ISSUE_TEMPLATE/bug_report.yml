@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in the library does not do what the README or the API contract says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Do not include your API key, a webhook secret or any customer data.
+        For a security issue, see SECURITY.md instead of opening an issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. A traceback helps.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Minimal code
+      description: The smallest script that shows it.
+      render: python
+  - type: input
+    id: request_id
+    attributes:
+      label: Request id
+      description: The `X-Request-Id` of the answer (`error.request_id`), if the API answered.
+  - type: input
+    id: version
+    attributes:
+      label: Library and Python versions
+      placeholder: mechanicalai 0.0.2, Python 3.12.3, Linux
+    validations:
+      required: true
