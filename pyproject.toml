@@ -43,7 +43,7 @@ mechanicalai = "mechanicalai._cli:main"
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
-    "respx>=0.22",
+    "respx>=0.23.1",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
