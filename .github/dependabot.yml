@@ -1,9 +1,8 @@
+# Version updates for the workflows' actions only. The library's Python dependencies keep open lower bounds on
+# purpose, so users are never forced onto a dependency's newest release; Dependabot's security updates for them
+# stay on through the repository's security settings.
 version: 2
 updates:
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
