@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] - 2026-11-07
+
+### Fixed
+
+- An upload above 64 MB declared a sha256 digest the API refuses (400 `invalid_parameter`, `param: digest`); the digest is now declared only for a file the API verifies, up to 64 MB.
+
 ## [0.0.5] - 2026-11-07
 
 ### Added

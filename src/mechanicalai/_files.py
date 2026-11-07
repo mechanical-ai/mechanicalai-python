@@ -3,7 +3,8 @@
 An upload is given as a path, an open binary file, ``bytes`` (with a ``name``), or a ``(name, bytes_or_file)``
 tuple. A path or a file backed by a real file descriptor is read from disk, never held whole in memory; an open file
 is read from its current position. Up to ``MULTIPART_MAX_BYTES`` the bytes go in one multipart ``POST``; above
-that, through a signed upload URL with the ``sha256:`` digest declared.
+that, through a signed upload URL. The ``sha256:`` digest is declared only for a file of at most
+``DIGEST_MAX_BYTES``, the size up to which the API verifies it at ``complete``; a larger file is uploaded without one.
 
 A download's file name is the artifact's or file's own name made safe for any file system: a bare name, no
 control characters, no Windows-reserved stems, no trailing dots or spaces.
@@ -24,6 +25,7 @@ from typing import IO, Any, Protocol
 import anyio
 
 __all__ = [
+    "DIGEST_MAX_BYTES",
     "MULTIPART_MAX_BYTES",
     "FileInput",
     "UploadSource",
@@ -35,6 +37,8 @@ __all__ = [
 ]
 
 MULTIPART_MAX_BYTES = 64 * 1024 * 1024
+#: the largest upload whose sha256 digest the API verifies at ``complete``; above it no digest is declared
+DIGEST_MAX_BYTES = 64 * 1024 * 1024
 """The multipart limit of ``POST /projects/{id}/files``; larger files use an upload URL."""
 
 CHUNK_SIZE = 1024 * 1024
@@ -192,6 +196,13 @@ class UploadSource:
 
     async def adigest(self) -> str:
         return await anyio.to_thread.run_sync(self.digest)
+
+    def declared_digest(self) -> str | None:
+        """The digest to declare on an upload URL: the file's for a size the API verifies, else ``None``."""
+        return self.digest() if self.size <= DIGEST_MAX_BYTES else None
+
+    async def adeclared_digest(self) -> str | None:
+        return await self.adigest() if self.size <= DIGEST_MAX_BYTES else None
 
     @property
     def uses_multipart(self) -> bool:
