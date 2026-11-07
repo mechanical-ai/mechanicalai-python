@@ -320,3 +320,23 @@ async def test_async_file_object_upload_reads_in_a_thread(
         await async_client.files.upload("prj_1", stream)
     assert put_route.calls.last.request.content == b"0123456789"
     assert put_route.calls.last.request.headers["content-length"] == "10"
+
+
+def test_a_file_above_the_digest_bound_declares_no_digest(
+    api: respx.MockRouter, client: Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(files_module, "MULTIPART_MAX_BYTES", 16)
+    monkeypatch.setattr(files_module, "DIGEST_MAX_BYTES", 16)
+    data = bytes(range(100))
+    path = tmp_path / "big.step"
+    path.write_bytes(data)
+    url_route = api.post("/projects/prj_1/files/upload-url").mock(
+        return_value=httpx.Response(201, json=_upload_url_body())
+    )
+    api.put(UPLOAD_URL).mock(return_value=httpx.Response(200))
+    api.post(f"/files/{FILE['id']}/complete").mock(return_value=httpx.Response(200, json=FILE))
+
+    uploaded = client.files.upload("prj_1", path)
+
+    assert uploaded.status == "ready"
+    assert json.loads(url_route.calls.last.request.content).get("digest") is None

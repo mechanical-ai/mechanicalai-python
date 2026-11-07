@@ -38,8 +38,8 @@ class Files(SyncAPIResource):
 
         ``file`` is a path, an open binary file (read from its current position), ``bytes`` (then give ``name``)
         or a ``(name, bytes)`` tuple. Up to 64 MB it goes in one multipart request; above that, or when the API
-        answers 413, the library asks for an upload URL, PUTs the bytes there with the sha256 digest declared, and
-        completes the file.
+        answers 413, the library asks for an upload URL, PUTs the bytes there and completes the file; the sha256
+        digest is declared for a file of at most 64 MB (the API verifies it at ``complete``), not for a larger one.
         """
         source = prepare_upload(file, name=name, content_type=content_type)
         if source.uses_multipart:
@@ -70,7 +70,7 @@ class Files(SyncAPIResource):
             name=source.name,
             size=source.size,
             content_type=source.content_type,
-            digest=source.digest(),
+            digest=source.declared_digest(),
             idempotency_key=idempotency_key,
         )
         self._client._external_request(
@@ -178,7 +178,7 @@ class AsyncFiles(AsyncAPIResource):
             name=source.name,
             size=source.size,
             content_type=source.content_type,
-            digest=await source.adigest(),
+            digest=await source.adeclared_digest(),
             idempotency_key=idempotency_key,
         )
         response = await self._client._external_request(
