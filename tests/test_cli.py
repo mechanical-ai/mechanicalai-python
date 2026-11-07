@@ -36,7 +36,7 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
         main(["--version"])
     assert info.value.code == 0
     assert capsys.readouterr().out.strip() == f"mechanicalai {mechanicalai.__version__}"
-    assert mechanicalai.__version__ == "0.0.3"
+    assert mechanicalai.__version__ == "0.0.4"
 
 
 def test_no_command_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
