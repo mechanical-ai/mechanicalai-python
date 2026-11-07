@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     env:
       # The Prism mock-server test runs on one interpreter only; the others skip it.
       MECHANICALAI_SKIP_PRISM: ${{ matrix.python != '3.12' && '1' || '' }}

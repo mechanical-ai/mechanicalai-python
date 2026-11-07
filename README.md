@@ -9,7 +9,7 @@ and documents it made, with progress while it works.
 pip install mechanicalai
 ```
 
-Python 3.10 to 3.13. Sync and async clients, typed models, a `mechanicalai` command.
+Python 3.10 to 3.15. Sync and async clients, typed models, a `mechanicalai` command.
 
 > The API is in preview. This library follows the published contract (`spec/public-api.openapi.yaml`); the version is
 > `0.0.2` and the surface may still move before 1.0.
@@ -337,7 +337,7 @@ version ahead of its removal, in `CHANGELOG.md` and with a `DeprecationWarning`.
 API contract in `spec/`; new fields in the API never break an older library, because every model keeps unknown
 fields.
 
-Supported Python: 3.10, 3.11, 3.12, 3.13.
+Supported Python: 3.10, 3.11, 3.12, 3.13, 3.14, 3.15.
 
 ## Contributing
 
