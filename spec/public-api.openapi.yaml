@@ -1287,7 +1287,7 @@ components:
     RunCreate:
       value:
         engine: mekint
-        problem: "Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. Load cases are in load-cases.xlsx. Use S355 unless told otherwise, metric, ISO fits, fillet all inside corners. Keep the bracket under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load and report the safety factor."
+        problem: "Cast aluminium bracket for a 12 kg motor on four M8 holes. First mode above 500 Hz, 3x the motor weight in every axis at a safety factor of 2, under 0.8 kg."
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
         units: metric
         language: en
@@ -1303,7 +1303,7 @@ components:
         engine_version: null
         status: queued
         cancel_requested: false
-        problem: "Design a steel bracket that mounts the 12 kg motor …"
+        problem: "Cast aluminium bracket for a 12 kg motor …"
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
         units: metric
         language: en
@@ -1330,14 +1330,14 @@ components:
         engine_version: mekint-20261105
         status: succeeded
         cancel_requested: false
-        problem: "Design a steel bracket that mounts the 12 kg motor …"
+        problem: "Cast aluminium bracket for a 12 kg motor …"
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
         units: metric
         language: en
         cost_cents: 1420
-        message: "I designed a 6 mm S355 two-leg bracket (0.94 kg) that mounts the motor on the four M8 holes. Its first mode is 112 Hz and the peak von Mises stress at 3x load is 178 MPa, a safety factor of 2.0 against yield. The motor's centre of mass was not given; I assumed 60 mm above the plate and the bracket document shows the sensitivity to that height.\n\nThe model, the load-case table and the stress plots are in the project."
-        summary: "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz. Peak von Mises 178 MPa at 3x load, safety factor 2.0 against yield. Assumed the motor's centre of mass 60 mm above the plate (not given); the bracket document shows the sensitivity to that height."
-        next_actions: ["Confirm the motor centre-of-mass height.", "Specify the plate material if it is not steel."]
+        message: "I designed a cast aluminium (A356-T6) bracket, 0.71 kg, on the four M8 holes. Its first mode is 540 Hz and the peak von Mises stress under 3x the motor weight in every axis is 98 MPa, a safety factor of 2.1 against yield. The motor's centre of mass was not given; I took it 60 mm above the mounting plane and the bracket document shows the sensitivity to that height. The STEP, the mode-shape plot and the stress tables are attached."
+        summary: "A cast aluminium (A356-T6) bracket, 0.71 kg, first mode 540 Hz. Peak von Mises 98 MPa at 3x the motor weight in every axis, safety factor 2.1 against yield. Assumed the motor's centre of mass 60 mm above the mounting plane (not given); the bracket document shows the sensitivity to that height."
+        next_actions: ["Confirm the motor centre-of-mass height.", "Say whether the casting is machined at the M8 seats."]
         question: null
         failure: null
         end_user: plant-3
