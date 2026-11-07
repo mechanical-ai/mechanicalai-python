@@ -130,8 +130,10 @@ def test_quickstart_against_prism(
         project.id,
         engine="mekint",
         files=[plate.id],
-        problem="Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. "
-        "Keep it under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load.",
+        problem="Cast aluminium bracket for a 12 kg motor "
+        "on four M8 holes. First mode above 500 Hz, "
+        "3x the motor weight in every axis at a "
+        "safety factor of 2, under 0.8 kg.",
     )
     assert isinstance(run, Run) and run.id.startswith("run_")
     assert run.status in ("queued", "running", "needs_input", "succeeded", "failed", "cancelled")

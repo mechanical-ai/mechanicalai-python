@@ -18,7 +18,7 @@ and documents it made.
         return client.runs.retrieve(run.id)
 
     run = follow(client.runs.create(project.id, engine="mekint", files=[plate.id],
-                                    problem="Design a steel bracket that mounts the 12 kg motor on the plate."))
+                                    problem="Cast aluminium bracket for a 12 kg motor on four M8 holes."))
     while run.status == "needs_input":                   # the engine asked, as it does in the app: answer it
         run = follow(client.runs.reply(run.id, text=input(f"{run.question} ")))
     print(run.status, run.cost_cents, run.summary)
