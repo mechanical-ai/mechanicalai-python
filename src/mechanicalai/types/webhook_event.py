@@ -8,7 +8,7 @@ from pydantic import PrivateAttr
 from mechanicalai.types._base import BaseModel
 from mechanicalai.types.run import Run
 
-WebhookEventType = Literal["run.succeeded", "run.needs_input", "run.budget_exhausted", "run.failed", "run.cancelled"]
+WebhookEventType = Literal["run.succeeded", "run.needs_input", "run.failed", "run.cancelled"]
 
 
 class WebhookEventData(BaseModel):

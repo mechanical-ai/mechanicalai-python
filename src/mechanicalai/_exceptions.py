@@ -111,11 +111,17 @@ class AuthenticationError(APIStatusError):
 
 
 class PaymentRequiredError(APIStatusError):
-    """402: the wallet cannot cover the budget, or the key's spending cap is reached."""
+    """402: the API wallet's live balance is at or below zero (``insufficient_credit``), or the key's monthly cap is
+    reached (``key_cap_reached``)."""
 
 
 class InsufficientCreditsError(PaymentRequiredError):
-    """402 ``insufficient_credit``: the API wallet's live balance cannot cover ``budget_cents``."""
+    """402 ``insufficient_credit``: the API wallet's live balance is at or below zero (``param`` is null); add credit
+    and send the same request again.
+
+    A run already working when the wallet reaches zero is not refused this way: it ends ``failed`` with
+    ``failure.code == "insufficient_credit"``.
+    """
 
 
 class PermissionDeniedError(APIStatusError):
@@ -163,7 +169,9 @@ class UnprocessableEntityError(APIStatusError):
 
 
 class RateLimitError(APIStatusError):
-    """429: too many requests, or too many concurrent runs for this key. ``retry_after`` is the server's advice."""
+    """429 ``rate_limited``: the edge's rate limit, or, on a create or a reply, the account's message burst
+    (``Limits.messages_per_minute``, app messages and API runs together; ``Retry-After`` is the window). Retried
+    like any 429, honouring ``Retry-After`` (``retry_after``)."""
 
     @property
     def retry_after(self) -> float | None:

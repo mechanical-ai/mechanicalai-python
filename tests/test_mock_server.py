@@ -24,7 +24,7 @@ import mechanicalai
 from mechanicalai.types import Artifact, File, Project, Run, RunEvent
 
 SPEC = Path(__file__).resolve().parents[1] / "spec" / "public-api.openapi.yaml"
-FAKE_KEY = "mk_test_000000000000000000000000000000000000test"
+FAKE_KEY = "mk_0000000000000000000000000000000000000000"
 PREFERRED_PORT = 4010
 STARTUP_TIMEOUT_S = 120
 
@@ -120,28 +120,26 @@ def test_quickstart_against_prism(
     assert isinstance(plate, File) and plate.id.startswith("file_")
     assert plate.status in ("ready", "uploading")
 
+    def follow(run: Run) -> Run:
+        events = list(client.runs.stream(run.id))
+        assert events and all(isinstance(e, RunEvent) for e in events)
+        assert events[-1].kind == "status" and events[-1].status in ("succeeded", "needs_input", "failed", "cancelled")
+        return client.runs.retrieve(run.id)
+
     run = client.runs.create(
         project.id,
         engine="mekint",
         files=[plate.id],
-        budget_cents=3000,
         problem="Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. "
         "Keep it under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load.",
     )
     assert isinstance(run, Run) and run.id.startswith("run_")
-    assert run.status in ("queued", "running", "needs_input", "succeeded", "budget_exhausted", "failed", "cancelled")
+    assert run.status in ("queued", "running", "needs_input", "succeeded", "failed", "cancelled")
+    assert "budget_cents" not in run.to_dict() and "report_artifact_id" not in run.to_dict()
 
-    events = list(client.runs.stream(run.id))
-    assert events and all(isinstance(e, RunEvent) for e in events)
-    assert events[-1].kind == "status" and events[-1].status in (
-        "succeeded",
-        "needs_input",
-        "budget_exhausted",
-        "failed",
-        "cancelled",
-    )
-
-    run = client.runs.retrieve(run.id)
+    run = follow(run)
+    while run.status == "needs_input":  # the engine asked, as it does in the app: answer it
+        run = follow(client.runs.reply(run.id, text="Steel, 10 mm."))
     assert isinstance(run.cost_cents, int)
     assert run.summary is None or isinstance(run.summary, str)
 
@@ -159,7 +157,7 @@ def test_quickstart_against_prism(
     page = client.artifacts.list_for_project(project.id)
     assert isinstance(page.has_more, bool)
     limits = client.usage.limits()
-    assert limits.projects_per_account > 0
+    assert limits.projects_per_user > 0 and limits.user_char_limit > 0
     usage = client.usage.retrieve(period="month")
     assert usage.period in ("day", "month")
     engines = client.engines.list()
@@ -176,9 +174,7 @@ async def test_async_quickstart_against_prism(prism: str, media_stub: respx.Mock
     async with mechanicalai.AsyncClient(api_key=FAKE_KEY, base_url=prism) as client:
         project = await client.projects.create(name="Motor bracket, line 3")
         plate = await client.files.upload(project.id, b"ISO-10303-21;", name="mounting-plate.step")
-        run = await client.runs.create(
-            project.id, engine="mekint", files=[plate.id], budget_cents=3000, problem="A bracket."
-        )
+        run = await client.runs.create(project.id, engine="mekint", files=[plate.id], problem="A bracket.")
         events = [e async for e in client.runs.stream(run.id)]
         assert events and events[-1].kind == "status"
         artifacts = await client.artifacts.list_for_run(run.id)

@@ -46,7 +46,7 @@ from tests.conftest import error_body
         (410, "gone_error", "something_else", GoneError),
         (413, "invalid_request_error", "file_too_large", APIStatusError),
         (422, "invalid_request_error", "unprocessable", UnprocessableEntityError),
-        (429, "rate_limit_error", "concurrency_limit_reached", RateLimitError),
+        (429, "rate_limit_error", "rate_limited", RateLimitError),
         (500, "api_error", "internal_error", InternalServerError),
         (503, "overloaded_error", "server_preparing", InternalServerError),
     ],
@@ -131,19 +131,18 @@ def test_rate_limit_retry_after(api: respx.MockRouter, client: Client) -> None:
     assert info.value.retry_after == 7.0
 
 
-def test_insufficient_credits_reads_like_the_contract(api: respx.MockRouter, client: Client) -> None:
+def test_insufficient_credit_reads_like_the_contract(api: respx.MockRouter, client: Client) -> None:
     api.post("/projects/prj_1/runs").mock(
         return_value=httpx.Response(
             402,
             json=error_body(
                 "payment_required_error",
                 "insufficient_credit",
-                "The API wallet holds $12.40; this run's budget is $30.00.",
-                param="budget_cents",
+                "Your API wallet balance is -$0.12. Add credit to the wallet to continue.",
             ),
         )
     )
     with pytest.raises(InsufficientCreditsError) as info:
-        client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=3000)
-    assert info.value.param == "budget_cents"
+        client.runs.create("prj_1", engine="mekint", problem="x")
+    assert info.value.code == "insufficient_credit" and info.value.param is None
     assert "wallet" in info.value.message

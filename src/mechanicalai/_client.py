@@ -40,7 +40,7 @@ class Client(SyncAPIClient):
     ::
 
         client = mechanicalai.Client()                 # key from MECHANICALAI_API_KEY
-        client = mechanicalai.Client(api_key="mk_test_000000000000000000000000000000000000test")
+        client = mechanicalai.Client(api_key="mk_0000000000000000000000000000000000000000")
     """
 
     engines: Engines
