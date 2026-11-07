@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.3] - 2026-11-07
+## [0.0.4] - 2026-11-07
 
 The API is the app driven by a script, and the library follows: what the API had on top of the app is gone.
 
@@ -33,7 +33,11 @@ The API is the app driven by a script, and the library follows: what the API had
 
 ### Changed
 
-- The README quickstart answers a `needs_input` run with `runs.reply`, as the app's user answers a question.
+- The README quickstart answers a `needs_input` run with `runs.reply`, as the app's user answers a question, and poses a cast aluminium bracket.
+
+### Fixed
+
+- The package version is read from `_version.py` at build time; `pyproject.toml` no longer carries its own copy. The `v0.0.3` tag was never published: its build carried the stale `0.0.2` and PyPI refused it.
 - A 429 on a create or a reply is the account's message burst (`Limits.messages_per_minute`, `Retry-After` the
   window); the client retries it as it always did any 429.
 

@@ -1,6 +1,6 @@
 [project]
 name = "mechanicalai"
-version = "0.0.2"
+dynamic = ["version"]
 description = "The official Python library for the Mechanical AI API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,6 +51,9 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/mechanicalai/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mechanicalai"]
