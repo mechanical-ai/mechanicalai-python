@@ -1,8 +1,9 @@
 # mechanicalai
 
-The official Python library for the [Mechanical AI API](https://mechanicalai.com): an engineering problem solver
-with memory. You give it a problem and your files; it returns a report, models, tables and data, with progress while
-it works. The same engine as the app, called from your own code with an API key.
+The official Python library for the [Mechanical AI API](https://mechanicalai.com): the same engine as
+[mekint.com](https://mekint.com), driven from your code with an API key. A project holds your files; a run is a
+message to the engine: it asks when it needs something and ends with its summary and the models, drawings, tables
+and documents it made, with progress while it works.
 
 ```bash
 pip install mechanicalai
@@ -20,28 +21,35 @@ import mechanicalai
 client = mechanicalai.Client()                      # MECHANICALAI_API_KEY
 project = client.projects.create(name="Motor bracket, line 3")
 plate = client.files.upload(project.id, "mounting-plate.step")
-run = client.runs.create(project.id, engine="mekint", files=[plate.id], budget_cents=3000,
+
+def follow(run):                                    # print progress until the run ends
+    for event in client.runs.stream(run.id):
+        print(event.at, event.text or event.status)
+    return client.runs.retrieve(run.id)
+
+run = follow(client.runs.create(project.id, engine="mekint", files=[plate.id],
     problem="Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. "
-            "Keep it under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load.")
-for event in client.runs.stream(run.id):
-    print(event.at, event.text or event.status)
-run = client.runs.retrieve(run.id)
-print(run.status, run.cost_cents, run.summary)
+            "Keep it under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load."))
+while run.status == "needs_input":                  # the engine asked, as it does in the app: answer it
+    run = follow(client.runs.reply(run.id, text=input(f"{run.question} ")))
+print(run.status, run.cost_cents, run.summary, run.next_actions)
+print(run.message)                                  # the engine's full final reply
 for artifact in client.artifacts.list_for_run(run.id):
     client.artifacts.download(artifact.id, "./out")
 ```
 
 A project is the durable container; a run is one job on it. A later run on the same project continues with the
-engine's memory of it, so the next problem starts where the last one ended. Money is integer US cents everywhere
-(`budget_cents`, `cost_cents`); `budget_cents` is the most one run may charge.
+engine's memory of it, so the next problem starts where the last one ended. A run is charged as it works, like the
+app, from the account's API wallet, in integer US cents (`cost_cents`); when the wallet reaches zero, the run ends
+`failed` with `failure.code == "insufficient_credit"`.
 
 ## Authentication
 
-A key looks like `mk_live_...` or `mk_test_...` (40 characters after the prefix). The client reads it from
+A key is `mk_` followed by 40 URL-safe characters, shown once when it is made. The client reads it from
 `MECHANICALAI_API_KEY`, or takes it directly:
 
 ```python
-client = mechanicalai.Client(api_key="mk_test_000000000000000000000000000000000000test")
+client = mechanicalai.Client(api_key="mk_0000000000000000000000000000000000000000")
 ```
 
 The key is sent only as `Authorization: Bearer` to the API host. It never goes to the signed upload and download URLs
@@ -82,8 +90,7 @@ import asyncio, mechanicalai
 
 async def main() -> None:
     async with mechanicalai.AsyncClient() as client:
-        run = await client.runs.create_in_new_project(engine="mekint", budget_cents=2000,
-                                                       problem="A 2 kg gripper with 300 mm reach.")
+        run = await client.runs.create_in_new_project(engine="mekint", problem="A 2 kg gripper with 300 mm reach.")
         async for event in client.runs.stream(run.id):
             print(event.kind, event.text or event.status)
         run = await client.runs.wait(run.id)
@@ -95,25 +102,27 @@ asyncio.run(main())
 ## Runs
 
 ```python
-run = client.runs.create(project.id, engine="mekint", problem="...", budget_cents=3000,
-                         files=[plate.id], instructions="Use S355 unless told otherwise.",
-                         units="metric", language="en", allow_web=False,
+run = client.runs.create(project.id, engine="mekint", problem="...", files=[plate.id],
+                         units="metric", language="en",
                          end_user="plant-3", metadata={"ticket": "ENG-4471"},
                          webhook_url="https://example.com/hooks/mechanicalai")
-run = client.runs.create_in_new_project(engine="mekint", problem="...", budget_cents=3000)  # names the project itself
+run = client.runs.create_in_new_project(engine="mekint", problem="...")   # names the project itself
 run = client.runs.retrieve(run.id)
 run = client.runs.wait(run.id, poll_interval=2.0, timeout=3600)   # until terminal; WaitTimeoutError after timeout
 run = client.runs.cancel(run.id)                                  # stops at once; charged for what ran
 page = client.runs.list(project.id)
 ```
 
-`engine` is `"mekint"`; the run's `engine_version` says which snapshot ran. A run ends in one of five states:
-`succeeded`, `needs_input` (the engine asked one question, in `run.question`), `budget_exhausted`, `failed`
-(`run.failure.code`) or `cancelled`. Answer a question with a reply, which starts a new run on the same project:
+`engine` is `"mekint"`; the run's `engine_version` says which snapshot ran. A run ends in one of four states:
+`succeeded` (`run.message` is the engine's full final reply, `run.summary` its gist, `run.next_actions` what it
+suggests next), `needs_input` (the engine asked one question, in `run.question`), `failed` (`run.failure.code`;
+`insufficient_credit` when the wallet reached zero, `key_cap_reached` at the key's monthly cap) or `cancelled`.
+Answer a question with a reply, which starts a new run on the same project with the engine's memory of the first,
+as answering in the app does:
 
 ```python
 if run.status == "needs_input":
-    follow_up = client.runs.reply(run.id, text="Steel, 10 mm.", budget_cents=2000)
+    follow_up = client.runs.reply(run.id, text="Steel, 10 mm.")
 ```
 
 One run at a time per project: a second one raises `ProjectBusyError` (409 `project_busy`).
@@ -156,13 +165,12 @@ to a run by id. `files.list`, `files.retrieve`, `files.download(file_id, dest)` 
 
 ## Downloading artifacts
 
-What a run produced, flat: a report, models, tables, data, images.
+What a run produced, flat: documents, models, tables, data, images.
 
 ```python
 for artifact in client.artifacts.list_for_run(run.id):
     print(artifact.kind, artifact.name, artifact.formats)
     client.artifacts.download(artifact, "./out")                     # ./out/<name>.<default_format>
-client.artifacts.download(run.report_artifact_id, "./out", format="pdf")
 client.artifacts.download(model.id, "./parts/bracket-v2.stl", format="stl")   # an exact path
 link = client.artifacts.download_url(model.id, format="glb")     # a signed link, valid 10 minutes
 ```
@@ -194,9 +202,9 @@ Handle by `code`; messages are for people and not stable.
 
 ```python
 try:
-    run = client.runs.create(project.id, engine="mekint", problem="...", budget_cents=3000)
+    run = client.runs.create(project.id, engine="mekint", problem="...")
 except mechanicalai.InsufficientCreditsError as e:
-    print("top up the API wallet:", e.message)
+    print("add credit to the API wallet:", e.message)
 except mechanicalai.ProjectBusyError:
     print("wait for the live run, or cancel it")
 except mechanicalai.APIStatusError as e:
@@ -204,7 +212,9 @@ except mechanicalai.APIStatusError as e:
 ```
 
 Connection errors, timeouts, 429 and 5xx answers are retried with exponential backoff and jitter (0.5 s doubling
-to 8 s), honouring `Retry-After` up to 60 s, up to `max_retries` (2) times. A `POST` that carries no
+to 8 s), honouring `Retry-After` up to 60 s, up to `max_retries` (2) times. A 429 on a create or a reply is the
+app's message burst (`limits.messages_per_minute`, app messages and API runs together: "Too many requests at
+once. Please wait a moment.", `Retry-After: 60`), and the client retries it like any other 429. A `POST` that carries no
 `Idempotency-Key` (`runs.cancel`, `files.complete`) is the exception: it is never sent again after a connection
 error, a timeout or a 5xx, because the server may already have acted on it; only its 429 is retried. Nothing else
 is retried, so a 409 `project_busy` or a 400 surfaces at once. The same policy covers the signed upload and
@@ -253,8 +263,8 @@ this page).
 
 ## Webhooks
 
-A run with `webhook_url` posts its terminal event (`run.succeeded`, `run.needs_input`, `run.budget_exhausted`,
-`run.failed`, `run.cancelled`) to that `https` URL, signed with the key's webhook secret from the console. Verify
+A run with `webhook_url` posts its terminal event (`run.succeeded`, `run.needs_input`, `run.failed`,
+`run.cancelled`) to that `https` URL, signed with the key's webhook secret from the console. Verify
 the delivery with the raw body and the headers:
 
 ```python
@@ -280,7 +290,14 @@ tolerate a duplicate `Mechanicalai-Event-Id`.
 usage = client.usage.retrieve(period="month", group_by="end_user")
 usage.runs, usage.cost_cents, usage.buckets, usage.by_end_user["plant-3"].cost_cents
 limits = client.usage.limits()
-limits.projects_per_account, limits.files_per_run, limits.usage.running_runs_this_key
+limits.projects_per_user, limits.messages_per_minute, limits.user_char_limit, limits.usage.tool_runs
+```
+
+The limits are the app's own numbers under the names its rules give them, plus the three that exist for the API
+alone (`files_per_project`, `storage_bytes`, `requests_per_minute`).
+
+```python
+limits.reference_file_upload_bytes                 # the multipart upload's bound
 ```
 
 ## CLI
@@ -288,8 +305,9 @@ limits.projects_per_account, limits.files_per_run, limits.usage.running_runs_thi
 The package installs a `mechanicalai` command (`MECHANICALAI_API_KEY` in the environment, or `--api-key`):
 
 ```bash
-mechanicalai solve "Design a bracket for the attached plate." --file plate.step --budget-cents 3000 --out ./out
+mechanicalai solve "Design a bracket for the attached plate." --file plate.step --out ./out
 mechanicalai solve "Re-check it at 5x load." --project prj_... --language ko
+mechanicalai runs reply run_... "Steel, 10 mm." --file loads.xlsx --out ./out
 mechanicalai runs get run_...
 mechanicalai runs list --project prj_...
 mechanicalai runs cancel run_...
@@ -301,8 +319,9 @@ mechanicalai --version
 ```
 
 `solve` creates a project (or uses `--project`), uploads the files, starts the run, prints events as they stream,
-downloads every artifact into `--out` and prints the summary. Exit codes: 0 on success, 1 on an API or connection
-error, 2 on a usage error.
+downloads every artifact into `--out` and prints the engine's reply. When the run ends `needs_input`, it prints
+the question; `runs reply` answers it (with `--file` attachments) and follows the new run the same way. Exit
+codes: 0 on success, 1 on an API or connection error, 2 on a usage error.
 
 ## Logging
 

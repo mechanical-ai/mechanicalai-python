@@ -11,7 +11,7 @@ import respx
 
 from mechanicalai import AsyncClient, Client
 
-API_KEY = "mk_test_000000000000000000000000000000000000test"
+API_KEY = "mk_0000000000000000000000000000000000000000"
 BASE_URL = "https://api.example.test/v1"
 
 # ----- payloads: the contract's own examples -----------------------------------------------------------------------
@@ -50,18 +50,15 @@ RUN_QUEUED: dict[str, Any] = {
     "status": "queued",
     "cancel_requested": False,
     "problem": "Design a steel bracket that mounts the 12 kg motor ...",
-    "instructions": "Use S355 unless told otherwise.",
     "files": ["file_01jc4y1n8r3t"],
     "units": "metric",
     "language": "en",
-    "allow_web": False,
-    "budget_cents": 3000,
     "cost_cents": 0,
+    "message": None,
     "summary": None,
     "next_actions": [],
     "question": None,
     "failure": None,
-    "report_artifact_id": None,
     "end_user": "plant-3",
     "metadata": {"ticket": "ENG-4471"},
     "webhook_url": None,
@@ -78,21 +75,23 @@ RUN_SUCCEEDED: dict[str, Any] = {
     "engine_version": "mekint-20261105",
     "status": "succeeded",
     "cost_cents": 1420,
+    "message": "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz. Peak von Mises 178 MPa at 3x load, safety "
+    "factor 2.0 against yield. I assumed the motor's centre of mass 60 mm above the plate; the bracket document shows "
+    "the sensitivity to that height.",
     "summary": "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz.",
     "next_actions": ["Confirm the motor centre-of-mass height."],
-    "report_artifact_id": "art_01jc5201",
     "started_at": "2026-11-06T10:02:08Z",
     "finished_at": "2026-11-06T10:11:30Z",
     "duration_s": 562,
 }
 
-ARTIFACT_REPORT: dict[str, Any] = {
+ARTIFACT_DOCUMENT: dict[str, Any] = {
     "id": "art_01jc5201",
     "object": "artifact",
     "project_id": "prj_01jc4x7m2k9q",
     "run_id": "run_01jc5000a1b2",
-    "kind": "report",
-    "name": "bracket-report",
+    "kind": "document",
+    "name": "bracket-notes",
     "formats": ["md", "pdf"],
     "default_format": "md",
     "size": 219136,
@@ -135,16 +134,15 @@ USAGE: dict[str, Any] = {
 
 LIMITS: dict[str, Any] = {
     "object": "limits",
-    "projects_per_account": 100,
+    "projects_per_user": 100,
     "files_per_project": 200,
-    "files_per_run": 50,
     "storage_bytes": 53687091200,
-    "concurrent_runs_per_key": 2,
+    "concurrent_tool_runs": 4,
+    "messages_per_minute": 10,
     "requests_per_minute": 120,
-    "upload_bytes_max": 67108864,
-    "problem_chars_max": 50000,
-    "instructions_chars_max": 20000,
-    "usage": {"projects": 12, "storage_bytes": 7340032000, "running_runs": 1, "running_runs_this_key": 1},
+    "reference_file_upload_bytes": 67108864,
+    "user_char_limit": 100000,
+    "usage": {"projects": 12, "storage_bytes": 7340032000, "tool_runs": 1, "running_runs": 1},
 }
 
 EVENTS: list[dict[str, Any]] = [

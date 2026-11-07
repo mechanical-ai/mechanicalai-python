@@ -2,7 +2,8 @@
 
 ::
 
-    mechanicalai solve "Design a bracket for the attached plate." --file plate.step --budget-cents 3000 --out ./out
+    mechanicalai solve "Design a bracket for the attached plate." --file plate.step --out ./out
+    mechanicalai runs reply run_... "Steel, 10 mm." --file loads.xlsx --out ./out
     mechanicalai runs get run_...
     mechanicalai artifacts download art_... --format pdf --out ./out
     mechanicalai projects list
@@ -44,12 +45,9 @@ def _parser() -> argparse.ArgumentParser:
     solve.add_argument("--file", action="append", default=[], metavar="F", help="A file to upload (repeatable).")
     solve.add_argument("--project", metavar="ID", help="An existing project (default: a new one).")
     solve.add_argument("--engine", default="mekint", help="The engine (default: mekint).")
-    solve.add_argument("--budget-cents", type=int, default=3000, metavar="N", help="Ceiling in cents (default 3000).")
     solve.add_argument("--out", default="./out", metavar="DIR", help="Where artifacts are written (default ./out).")
-    solve.add_argument("--instructions", metavar="S", help="Standing instructions for this run.")
     solve.add_argument("--units", choices=["metric", "imperial"])
     solve.add_argument("--language", choices=["en", "ko"])
-    solve.add_argument("--allow-web", action="store_true", help="Let the engine read public web pages.")
     solve.add_argument("--name", help="The new project's name (ignored with --project).")
     solve.set_defaults(func=cmd_solve)
 
@@ -65,6 +63,14 @@ def _parser() -> argparse.ArgumentParser:
     runs_cancel = runs_sub.add_parser("cancel", help="Cancel a run.")
     runs_cancel.add_argument("run_id")
     runs_cancel.set_defaults(func=cmd_runs_cancel)
+    runs_reply = runs_sub.add_parser("reply", help="Answer a run's question and follow the new run like solve.")
+    runs_reply.add_argument("run_id", help="The run that ended needs_input.")
+    runs_reply.add_argument("text", help="The answer, in plain words.")
+    runs_reply.add_argument("--file", action="append", default=[], metavar="F", help="A file to attach (repeatable).")
+    runs_reply.add_argument(
+        "--out", default="./out", metavar="DIR", help="Where artifacts are written (default ./out)."
+    )
+    runs_reply.set_defaults(func=cmd_runs_reply)
 
     artifacts = commands.add_parser("artifacts", help="Artifacts.")
     artifacts_sub = artifacts.add_subparsers(dest="subcommand", metavar="action")
@@ -109,39 +115,29 @@ def _print(model: BaseModel | list[BaseModel]) -> None:
 
 def _print_summary(run: Run) -> None:
     print(f"run {run.id}: {run.status}, cost {run.cost_cents} cents")
-    if run.summary:
-        print(run.summary)
+    text = run.message or run.summary
+    if text:
+        print(text)
     if run.question:
         print(f"question: {run.question}")
+        print(f'answer with: mechanicalai runs reply {run.id} "..."')
     if run.failure:
         print(f"failure: {run.failure.code}: {run.failure.message}")
     for action in run.next_actions:
         print(f"next: {action}")
 
 
-def cmd_solve(client: Client, args: argparse.Namespace) -> int:
-    if args.project:
-        project_id = args.project
-    else:
-        project = client.projects.create(name=args.name)
-        project_id = project.id
-        print(f"project {project_id}", file=sys.stderr)
+def _upload(client: Client, project_id: str, paths: Sequence[str]) -> list[str]:
     file_ids: list[str] = []
-    for path in args.file:
+    for path in paths:
         uploaded = client.files.upload(project_id, path)
         file_ids.append(uploaded.id)
         print(f"uploaded {uploaded.name} as {uploaded.id}", file=sys.stderr)
-    run = client.runs.create(
-        project_id,
-        engine=args.engine,
-        problem=args.problem,
-        budget_cents=args.budget_cents,
-        files=file_ids or None,
-        instructions=args.instructions,
-        units=args.units,
-        language=args.language,
-        allow_web=True if args.allow_web else None,
-    )
+    return file_ids
+
+
+def _follow(client: Client, run: Run, out: str) -> int:
+    """Print the run's events as they stream, download what it produced into ``out`` and print the summary."""
     print(f"run {run.id}", file=sys.stderr)
     for event in client.runs.stream(run.id):
         stamp = event.at.strftime("%H:%M:%S")
@@ -154,13 +150,38 @@ def cmd_solve(client: Client, args: argparse.Namespace) -> int:
         else:
             print(f"{stamp}  {event.text}")
     run = client.runs.retrieve(run.id)
-    out_dir = Path(args.out)
+    out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     for artifact in client.artifacts.list_for_run(run.id):
         target = client.artifacts.download(artifact, out_dir)
         print(f"wrote {target}", file=sys.stderr)
     _print_summary(run)
     return EXIT_OK
+
+
+def cmd_solve(client: Client, args: argparse.Namespace) -> int:
+    if args.project:
+        project_id = args.project
+    else:
+        project = client.projects.create(name=args.name)
+        project_id = project.id
+        print(f"project {project_id}", file=sys.stderr)
+    file_ids = _upload(client, project_id, args.file)
+    run = client.runs.create(
+        project_id,
+        engine=args.engine,
+        problem=args.problem,
+        files=file_ids or None,
+        units=args.units,
+        language=args.language,
+    )
+    return _follow(client, run, args.out)
+
+
+def cmd_runs_reply(client: Client, args: argparse.Namespace) -> int:
+    file_ids = _upload(client, client.runs.retrieve(args.run_id).project_id, args.file) if args.file else []
+    run = client.runs.reply(args.run_id, text=args.text, files=file_ids or None)
+    return _follow(client, run, args.out)
 
 
 def cmd_runs_get(client: Client, args: argparse.Namespace) -> int:

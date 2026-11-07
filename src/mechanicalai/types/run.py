@@ -8,7 +8,7 @@ from typing_extensions import Required, TypedDict
 from mechanicalai.types._base import BaseModel
 from mechanicalai.types.project import Metadata
 
-RunStatus = Literal["queued", "running", "needs_input", "succeeded", "budget_exhausted", "failed", "cancelled"]
+RunStatus = Literal["queued", "running", "needs_input", "succeeded", "failed", "cancelled"]
 RunFailureCode = Literal[
     "model_unavailable",
     "model_rejected",
@@ -18,23 +18,26 @@ RunFailureCode = Literal[
     "restarted",
     "engine_error",
     "engine_gave_up",
+    "insufficient_credit",
+    "key_cap_reached",
 ]
 Units = Literal["metric", "imperial"]
 Language = Literal["en", "ko"]
 
-TERMINAL_RUN_STATUSES: frozenset[str] = frozenset(
-    {"needs_input", "succeeded", "budget_exhausted", "failed", "cancelled"}
-)
+TERMINAL_RUN_STATUSES: frozenset[str] = frozenset({"needs_input", "succeeded", "failed", "cancelled"})
 """The statuses a run ends in. ``needs_input`` ends the run; ``runs.reply`` starts a new one on the same project."""
 
 
 class RunFailure(BaseModel):
     code: RunFailureCode | str
+    """The two stops for money are ``insufficient_credit`` (the API wallet reached zero while the run worked) and
+    ``key_cap_reached`` (the key's monthly cap)."""
     message: str
 
 
 class Run(BaseModel):
-    """One job on one project: a problem and files in; a report, models, drawings, tables and data out."""
+    """One message to the engine on a project: the problem and files in; it asks when it needs something and ends
+    with its summary, next actions and the artifacts it made."""
 
     id: str
     object: Literal["run"] = "run"
@@ -45,24 +48,26 @@ class Run(BaseModel):
     engine_version: str | None = None
     """The snapshot that ran, once started."""
     status: RunStatus | str
-    """One of the seven known statuses; a value the library does not know yet is passed through."""
+    """One of the six known statuses; a value the library does not know yet is passed through."""
     cancel_requested: bool = False
     problem: str
-    instructions: str | None = None
     files: list[str] = []
     units: Units | str = "metric"
     language: Language | str = "en"
-    allow_web: bool = False
-    budget_cents: int
     cost_cents: int = 0
-    """Cost so far; final once the run is terminal."""
+    """The sum of the wallet's charges under the run so far; it may still rise for about a minute after the terminal
+    event while the last charges land."""
+    message: str | None = None
+    """The engine's final reply, exactly the chat's last assistant bubble: null until the run ends, the question on
+    ``needs_input``, null on a cancelled run and on one stopped for money."""
     summary: str | None = None
+    """The engine's own summary (the first paragraph of its reply when it gave none); null on a cancelled run and on
+    one stopped for money."""
     next_actions: list[str] = []
     question: str | None = None
     """Set when the status is ``needs_input``."""
     failure: RunFailure | None = None
     """Set when the status is ``failed``."""
-    report_artifact_id: str | None = None
     end_user: str | None = None
     metadata: Metadata = {}
     webhook_url: str | None = None
@@ -82,16 +87,12 @@ class RunCreateParams(TypedDict, total=False):
     engine: Required[str]
     """``mekint``: the alias of the current snapshot (``engine_version`` on the run says which one ran)."""
     problem: Required[str]
-    """1 to 50,000 characters."""
-    budget_cents: Required[int]
-    """At least 100: the most this run may charge."""
+    """The run's message, as typed in the app; the engine keeps the first ``user_char_limit`` characters of a longer
+    one, as it does in the app."""
     files: list[str]
-    """File ids in this project, each ``ready``."""
-    instructions: str
-    """Standing text for this run, up to 20,000 characters."""
+    """File ids in this project, each ``ready``: the files attached to the message."""
     units: Units
     language: Language
-    allow_web: bool
     end_user: str
     metadata: Metadata
     webhook_url: str
@@ -103,5 +104,4 @@ class RunReplyParams(TypedDict, total=False):
 
     text: Required[str]
     files: list[str]
-    budget_cents: int
-    """Defaults to the replied run's budget."""
+    """Added to the parent run's files."""

@@ -164,7 +164,7 @@ class BaseClient:
         if not key:
             raise ValueError(
                 "No API key. Pass api_key= or set the MECHANICALAI_API_KEY environment variable "
-                "(a key looks like mk_live_... or mk_test_...)."
+                "(a key is mk_ followed by 40 characters)."
             )
         self.api_key = key
         url = base_url if base_url is not None else os.environ.get("MECHANICALAI_BASE_URL") or DEFAULT_BASE_URL

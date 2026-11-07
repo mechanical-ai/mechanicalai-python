@@ -1,4 +1,5 @@
-# Copied from the Mechanical AI API contract on 2026-11-06; replaced by a pinned fetch once the API is published.
+# Copied from the Mechanical AI API contract (backend docs/public-api.openapi.yaml) on 2026-11-07; replaced by a
+# pinned fetch once the API is published.
 openapi: 3.1.0
 info:
   title: Mechanical AI API
@@ -22,7 +23,7 @@ info:
       `idempotency_in_progress` (resend the same request after `Retry-After`, 2 s), `idempotency_answer_lost`
       (the write happened; read the resource, never resend with a new key) or `idempotency_superseded` (a
       concurrent retry's answer stands; read it).
-    - When several refusals apply, the first of 503 `server_preparing`, 401, 404, 400, 413, 402, 409, 429 wins.
+    - When several refusals apply, the first of 503 `server_preparing`, 401, 404, 400, 413, 429 (the message burst), 402, 409 wins.
   contact:
     name: Mechanical AI
     url: https://mechanicalai.com
@@ -118,6 +119,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ProjectList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /projects/{project_id}:
@@ -135,6 +137,7 @@ paths:
               schema: { $ref: "#/components/schemas/Project" }
               examples:
                 default: { $ref: "#/components/examples/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
@@ -161,6 +164,7 @@ paths:
       summary: Delete a project and everything in it
       responses:
         "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
@@ -230,6 +234,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FileList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -279,6 +284,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/File" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
@@ -287,6 +293,7 @@ paths:
       summary: Delete a file
       responses:
         "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
@@ -332,6 +339,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DownloadLink" }
+        "400":
+          description: A malformed id, or a file that is not `ready` (`file_not_ready`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -387,6 +399,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/RunList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -447,6 +460,7 @@ paths:
               schema: { $ref: "#/components/schemas/Run" }
               examples:
                 default: { $ref: "#/components/examples/RunSucceeded" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -464,6 +478,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Run" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
@@ -483,8 +498,8 @@ paths:
       summary: Answer a run's question
       description: |
         Only for a run in `needs_input`, once. Starts a new run on the same project with `parent_run_id` set,
-        inheriting `engine`, `units`, `language`, `allow_web`, `end_user`, `metadata` and `webhook_url`; `files`
-        are added to the parent's; `budget_cents` defaults to the parent's.
+        inheriting `engine`, `units`, `language`, `end_user`, `metadata` and `webhook_url`; `files` are added to
+        the parent's.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -492,7 +507,7 @@ paths:
         content:
           application/json:
             schema: { $ref: "#/components/schemas/RunReply" }
-            example: { text: "Steel, 10 mm.", budget_cents: 2000 }
+            example: { text: "Steel, 10 mm." }
       responses:
         "202":
           description: The new run, queued.
@@ -542,6 +557,7 @@ paths:
                   - { id: evt_01jc5004, object: run_event, run_id: run_01jc5000a1b2, seq: 4, at: "2026-11-06T10:05:40Z", kind: task, text: "Running the static study at 3x load", percent: 65, eta_s: 50 }
                 has_more: true
                 next_cursor: "4"
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -556,7 +572,9 @@ paths:
         `text/event-stream`. Each event is sent as `id: <seq>`, `event: <kind>` and a JSON `data:` line holding a
         RunEvent. A comment line is sent every 15 seconds as keep-alive. The stream closes after the terminal
         `status` event; opened on a run that already ended, it replays every event and closes. Send
-        `Last-Event-ID` (a sequence number) to resume after a disconnect without a gap.
+        `Last-Event-ID` (a sequence number) to resume after a disconnect without a gap. A stream lives at most an
+        hour (resume with `Last-Event-ID`), and a key holds at most 10 open streams per backend instance (429
+        `rate_limited` with `Retry-After` beyond that).
       parameters:
         - name: Last-Event-ID
           in: header
@@ -580,8 +598,10 @@ paths:
                 id: 9
                 event: status
                 data: {"id":"evt_01jc5009","object":"run_event","run_id":"run_01jc5000a1b2","seq":9,"at":"2026-11-06T10:11:30Z","kind":"status","status":"succeeded"}
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /runs/{run_id}/artifacts:
     parameters:
@@ -600,6 +620,7 @@ paths:
               schema: { $ref: "#/components/schemas/ArtifactList" }
               examples:
                 default: { $ref: "#/components/examples/ArtifactList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -623,6 +644,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ArtifactList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -639,6 +661,7 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Artifact" }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
@@ -647,6 +670,7 @@ paths:
       summary: Delete an artifact
       responses:
         "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -734,6 +758,7 @@ paths:
                 by_end_user:
                   plant-3: { runs: 11, cost_cents: 31810 }
                   plant-7: { runs: 3, cost_cents: 9450 }
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
   /limits:
@@ -775,7 +800,7 @@ components:
     apiKey:
       type: http
       scheme: bearer
-      bearerFormat: "mk_live_… or mk_test_…"
+      bearerFormat: "mk_…"
 
   parameters:
     ProjectId:
@@ -830,7 +855,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example:
-            error: { type: invalid_request_error, code: budget_too_low, message: "budget_cents must be at least 100.", param: budget_cents, request_id: req_01jc4x0d }
+            error: { type: invalid_request_error, code: invalid_parameter, message: "units must be metric or imperial.", param: units, request_id: req_01jc4x0d }
     Unauthorized:
       description: The key is missing, malformed, unknown, revoked, or presented on the wrong host. One code for all of them.
       content:
@@ -839,12 +864,12 @@ components:
           example:
             error: { type: authentication_error, code: invalid_api_key, message: "Invalid API key.", param: null, request_id: req_01jc4x0e }
     PaymentRequired:
-      description: The wallet cannot cover the budget, or the key's monthly cap is reached.
+      description: The wallet's live balance is at or below zero, or the key's monthly cap is reached.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example:
-            error: { type: payment_required_error, code: insufficient_credit, message: "The API wallet holds $12.40; this run's budget is $30.00.", param: budget_cents, request_id: req_01jc4x0f }
+            error: { type: payment_required_error, code: insufficient_credit, message: "Your API wallet balance is -$0.12. Add credit to the wallet to continue.", param: null, request_id: req_01jc4x0f }
     NotFound:
       description: No such object for this account (foreign objects and app-made projects included).
       content:
@@ -860,7 +885,7 @@ components:
           example:
             error: { type: conflict_error, code: storage_quota_reached, message: "This account already uses 50 GB of storage, the most allowed. Delete some files or artifacts to add more.", param: null, request_id: req_01jc4x0h, limit: 53687091200, count: 53700000000 }
     RateLimited:
-      description: Too many requests (from the edge), or too many concurrent runs for this key.
+      description: "Too many requests (from the edge), or the account's message burst is spent (the app's messages_per_minute, app messages and API runs together; Retry-After is the window)."
       headers:
         Retry-After:
           schema: { type: integer }
@@ -868,7 +893,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
           example:
-            error: { type: rate_limit_error, code: concurrency_limit_reached, message: "This key may hold 2 running runs.", param: null, request_id: req_01jc4x0k, limit: 2, count: 2 }
+            error: { type: rate_limit_error, code: rate_limited, message: "Too many requests at once. Please wait a moment.", param: null, request_id: req_01jc4x0k }
 
   schemas:
     Error:
@@ -881,12 +906,12 @@ components:
           properties:
             type:
               type: string
-              enum: [invalid_request_error, authentication_error, payment_required_error, not_found_error, conflict_error, rate_limit_error, api_error, overloaded_error]
+              enum: [invalid_request_error, authentication_error, payment_required_error, permission_error, not_found_error, conflict_error, rate_limit_error, api_error, overloaded_error]
             code: { type: string }
             message: { type: string }
             param: { type: [string, "null"] }
             request_id: { type: string }
-            limit: { type: integer, description: "On project_limit_reached, file_limit_reached, storage_quota_reached and concurrency_limit_reached." }
+            limit: { type: integer, description: "On project_limit_reached, file_limit_reached and storage_quota_reached." }
             count: { type: integer, description: "On the same codes." }
 
     ListMeta:
@@ -903,7 +928,7 @@ components:
       properties:
         id: { type: string, examples: [mekint] }
         object: { type: string, const: engine }
-        snapshot: { type: string, description: The deployed snapshot the alias points to, by the day it became current. }
+        snapshot: { type: string, description: "The deployed snapshot the alias points to, by the day it became current." }
         status: { type: string, enum: [current] }
         released_at: { type: string, format: date-time }
     EngineList:
@@ -1010,26 +1035,23 @@ components:
 
     RunStatus:
       type: string
-      enum: [queued, running, needs_input, succeeded, budget_exhausted, failed, cancelled]
+      enum: [queued, running, needs_input, succeeded, failed, cancelled]
     RunFailureCode:
       type: string
-      description: "The engine's run failure codes, with `engine_error` standing for its protocol failures (invalid_tool_arguments, invalid_object_reference, multiple_tool_calls, repair_without_tool_call) and `engine_gave_up` for the engine's own final answer with status failed."
-      enum: [model_unavailable, model_rejected, internal_error, step_budget, tool_call_budget, restarted, engine_error, engine_gave_up]
+      description: "The engine's run failure codes, with `engine_error` standing for its protocol failures (invalid_tool_arguments, invalid_object_reference, multiple_tool_calls, repair_without_tool_call), `engine_gave_up` for the engine's own final answer with status failed, and the two stops for money: `insufficient_credit` (the wallet's credit stop) and `key_cap_reached` (the key's monthly cap)."
+      enum: [model_unavailable, model_rejected, internal_error, step_budget, tool_call_budget, restarted, engine_error, engine_gave_up, insufficient_credit, key_cap_reached]
     RunCreate:
       type: object
-      required: [engine, problem, budget_cents]
+      required: [engine, problem]
       properties:
         engine: { type: string, examples: [mekint] }
-        problem: { type: string, minLength: 1, maxLength: 50000 }
+        problem: { type: string, minLength: 1, description: "The run's message, as typed in the app; the engine keeps its first user_char_limit characters of a longer one, as it does in the app." }
         files:
           type: array
           items: { type: string }
-          maxItems: 50
-        instructions: { type: string, maxLength: 20000 }
+          description: "Files of this project, each ready: the files attached to the message."
         units: { type: string, enum: [metric, imperial], default: metric }
         language: { type: string, enum: [en, ko], default: en }
-        allow_web: { type: boolean, default: false }
-        budget_cents: { type: integer, minimum: 100 }
         end_user: { type: string, pattern: "^[A-Za-z0-9_.:@-]{1,128}$" }
         metadata: { $ref: "#/components/schemas/Metadata" }
         webhook_url: { type: string, format: uri, pattern: "^https://", description: A public https host on port 443; needs the key's webhook secret. }
@@ -1037,16 +1059,14 @@ components:
       type: object
       required: [text]
       properties:
-        text: { type: string, minLength: 1, maxLength: 50000 }
+        text: { type: string, minLength: 1 }
         files:
           type: array
           items: { type: string }
-          maxItems: 50
           description: Added to the parent run's files.
-        budget_cents: { type: integer, minimum: 100, description: Defaults to the parent run's budget. }
     Run:
       type: object
-      required: [id, object, project_id, parent_run_id, engine, engine_version, status, cancel_requested, problem, instructions, files, units, language, allow_web, budget_cents, cost_cents, summary, next_actions, question, failure, report_artifact_id, end_user, metadata, webhook_url, created_at, started_at, finished_at, duration_s]
+      required: [id, object, project_id, parent_run_id, engine, engine_version, status, cancel_requested, problem, files, units, language, cost_cents, message, summary, next_actions, question, failure, end_user, metadata, webhook_url, created_at, started_at, finished_at, duration_s]
       properties:
         id: { type: string }
         object: { type: string, const: run }
@@ -1057,16 +1077,14 @@ components:
         status: { $ref: "#/components/schemas/RunStatus" }
         cancel_requested: { type: boolean }
         problem: { type: string }
-        instructions: { type: [string, "null"] }
         files:
           type: array
           items: { type: string }
         units: { type: string, enum: [metric, imperial] }
         language: { type: string, enum: [en, ko] }
-        allow_web: { type: boolean }
-        budget_cents: { type: integer }
-        cost_cents: { type: integer, description: May exceed `budget_cents` by what ran before the 5-second watcher stopped the run. }
-        summary: { type: [string, "null"] }
+        cost_cents: { type: integer, description: "The sum of the wallet's charges under the run so far; it may still rise for about a minute after the terminal event while the last charges land." }
+        message: { type: [string, "null"], description: "The engine's final reply, exactly the chat's last assistant bubble: null until the run ends, the question on needs_input, null on a cancelled run and on one stopped for money." }
+        summary: { type: [string, "null"], description: "The engine's own summary from respond; the first paragraph of its final answer when it gave none. Null on a cancelled run and on one stopped for money." }
         next_actions:
           type: array
           items: { type: string }
@@ -1077,7 +1095,6 @@ components:
           properties:
             code: { $ref: "#/components/schemas/RunFailureCode" }
             message: { type: string }
-        report_artifact_id: { type: [string, "null"] }
         end_user: { type: [string, "null"] }
         metadata: { $ref: "#/components/schemas/Metadata" }
         webhook_url: { type: [string, "null"] }
@@ -1122,7 +1139,7 @@ components:
 
     ArtifactKind:
       type: string
-      enum: [report, document, model, table, data, image]
+      enum: [document, model, table, data, image]
     Artifact:
       type: object
       required: [id, object, project_id, run_id, kind, name, formats, default_format, size, group, created_at]
@@ -1136,9 +1153,9 @@ components:
         formats:
           type: array
           items: { type: string }
-          description: "report: md, pdf, docx · document: md, pdf, docx · model: step, stl, glb, native (when the model has one) · table: csv, xlsx · data: vtu, csv, json · image: png"
+          description: "document: md, pdf, docx · model: step, stl, glb, native (when the model has one) · table: csv, xlsx · data and image: the file's own extension (vtu, csv, json, png among them; bin for a file without one)"
         default_format: { type: string }
-        size: { type: [integer, "null"], description: Bytes of the default format, when known. }
+        size: { type: [integer, "null"], description: "Bytes of the default format, when known." }
         group: { type: [string, "null"] }
         created_at: { type: string, format: date-time }
     ArtifactList:
@@ -1182,26 +1199,26 @@ components:
               cost_cents: { type: integer }
     Limits:
       type: object
-      required: [object, projects_per_account, files_per_project, files_per_run, storage_bytes, concurrent_runs_per_key, requests_per_minute, upload_bytes_max, problem_chars_max, instructions_chars_max, usage]
+      description: "The app's own numbers under the names the rules give them, plus the three that exist for the API alone (files_per_project, storage_bytes, requests_per_minute)."
+      required: [object, projects_per_user, files_per_project, storage_bytes, concurrent_tool_runs, messages_per_minute, requests_per_minute, reference_file_upload_bytes, user_char_limit, usage]
       properties:
         object: { type: string, const: limits }
-        projects_per_account: { type: integer }
-        files_per_project: { type: integer }
-        files_per_run: { type: integer }
-        storage_bytes: { type: integer }
-        concurrent_runs_per_key: { type: integer }
-        requests_per_minute: { type: integer }
-        upload_bytes_max: { type: integer }
-        problem_chars_max: { type: integer }
-        instructions_chars_max: { type: integer }
+        projects_per_user: { type: integer, description: "Projects per account, app and API alike (resources.projects_per_user)." }
+        files_per_project: { type: integer, description: "Files an API project holds, pending uploads included (api.files_per_project)." }
+        storage_bytes: { type: integer, description: "The account's uploads and artifacts together (api.storage_bytes)." }
+        concurrent_tool_runs: { type: integer, description: "External tool runs in flight per account, app and API runs together (burst.concurrent_tool_runs)." }
+        messages_per_minute: { type: integer, description: "Messages a minute per account, app messages and API runs together (burst.messages_per_minute)." }
+        requests_per_minute: { type: integer, description: "Requests per key, enforced at the edge (api.requests_per_minute)." }
+        reference_file_upload_bytes: { type: integer, description: "The app's reference-file limit: the multipart upload's bound." }
+        user_char_limit: { type: integer, description: "The engine's message bound: what it keeps of a longer problem." }
         usage:
           type: object
-          required: [projects, storage_bytes, running_runs, running_runs_this_key]
+          required: [projects, storage_bytes, tool_runs, running_runs]
           properties:
-            projects: { type: integer, description: App and API projects alike, as the limit counts them. }
+            projects: { type: integer, description: "App and API projects alike, as the limit counts them." }
             storage_bytes: { type: integer }
-            running_runs: { type: integer }
-            running_runs_this_key: { type: integer }
+            tool_runs: { type: integer, description: "The account's external tool runs in flight, app and API alike, as concurrent_tool_runs counts them." }
+            running_runs: { type: integer, description: "The account's API runs queued or running, across its keys." }
 
     WebhookEvent:
       type: object
@@ -1210,7 +1227,7 @@ components:
       properties:
         id: { type: string, examples: [wh_01jc5100] }
         object: { type: string, const: event }
-        type: { type: string, enum: [run.succeeded, run.needs_input, run.budget_exhausted, run.failed, run.cancelled] }
+        type: { type: string, enum: [run.succeeded, run.needs_input, run.failed, run.cancelled] }
         created_at: { type: string, format: date-time }
         data:
           type: object
@@ -1270,13 +1287,10 @@ components:
     RunCreate:
       value:
         engine: mekint
-        problem: "Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. Load cases are in load-cases.xlsx. Keep the bracket under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load and report the safety factor."
+        problem: "Design a steel bracket that mounts the 12 kg motor on the attached plate using the four M8 holes. Load cases are in load-cases.xlsx. Use S355 unless told otherwise, metric, ISO fits, fillet all inside corners. Keep the bracket under 1.2 kg and the first mode above 80 Hz. Check static stress at 3x load and report the safety factor."
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
-        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
         units: metric
         language: en
-        allow_web: false
-        budget_cents: 3000
         end_user: plant-3
         metadata: { ticket: ENG-4471 }
     RunQueued:
@@ -1290,18 +1304,15 @@ components:
         status: queued
         cancel_requested: false
         problem: "Design a steel bracket that mounts the 12 kg motor …"
-        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
         units: metric
         language: en
-        allow_web: false
-        budget_cents: 3000
         cost_cents: 0
+        message: null
         summary: null
         next_actions: []
         question: null
         failure: null
-        report_artifact_id: null
         end_user: plant-3
         metadata: { ticket: ENG-4471 }
         webhook_url: null
@@ -1320,18 +1331,15 @@ components:
         status: succeeded
         cancel_requested: false
         problem: "Design a steel bracket that mounts the 12 kg motor …"
-        instructions: "Use S355 unless told otherwise. Metric, ISO fits. Fillet all inside corners."
         files: [file_01jc4y1n8r3t, file_01jc4y2p9s4u]
         units: metric
         language: en
-        allow_web: false
-        budget_cents: 3000
         cost_cents: 1420
-        summary: "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz. Peak von Mises 178 MPa at 3x load, safety factor 2.0 against yield. Assumed the motor's centre of mass 60 mm above the plate (not given); the report shows the sensitivity to that height."
+        message: "I designed a 6 mm S355 two-leg bracket (0.94 kg) that mounts the motor on the four M8 holes. Its first mode is 112 Hz and the peak von Mises stress at 3x load is 178 MPa, a safety factor of 2.0 against yield. The motor's centre of mass was not given; I assumed 60 mm above the plate and the bracket document shows the sensitivity to that height.\n\nThe model, the load-case table and the stress plots are in the project."
+        summary: "A 6 mm S355 two-leg bracket, 0.94 kg, first mode 112 Hz. Peak von Mises 178 MPa at 3x load, safety factor 2.0 against yield. Assumed the motor's centre of mass 60 mm above the plate (not given); the bracket document shows the sensitivity to that height."
         next_actions: ["Confirm the motor centre-of-mass height.", "Specify the plate material if it is not steel."]
         question: null
         failure: null
-        report_artifact_id: art_01jc5201
         end_user: plant-3
         metadata: { ticket: ENG-4471 }
         webhook_url: null
@@ -1343,7 +1351,7 @@ components:
       value:
         object: list
         data:
-          - { id: art_01jc5201, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: report, name: bracket-report, formats: [md, pdf, docx], default_format: md, size: 219136, group: null, created_at: "2026-11-06T10:11:30Z" }
+          - { id: art_01jc5201, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: document, name: bracket-report, formats: [md, pdf, docx], default_format: md, size: 219136, group: null, created_at: "2026-11-06T10:11:30Z" }
           - { id: art_01jc5202, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: model, name: bracket, formats: [step, stl, glb, native], default_format: step, size: 2306215, group: null, created_at: "2026-11-06T10:04:17Z" }
           - { id: art_01jc5203, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: model, name: bracket-on-plate, formats: [step, stl, glb], default_format: step, size: 41943040, group: null, created_at: "2026-11-06T10:04:40Z" }
           - { id: art_01jc5204, object: artifact, project_id: prj_01jc4x7m2k9q, run_id: run_01jc5000a1b2, kind: table, name: load-cases-results, formats: [csv, xlsx], default_format: csv, size: 6144, group: null, created_at: "2026-11-06T10:08:55Z" }
@@ -1354,13 +1362,12 @@ components:
     Limits:
       value:
         object: limits
-        projects_per_account: 100
+        projects_per_user: 100
         files_per_project: 200
-        files_per_run: 50
         storage_bytes: 53687091200
-        concurrent_runs_per_key: 2
+        concurrent_tool_runs: 4
+        messages_per_minute: 10
         requests_per_minute: 120
-        upload_bytes_max: 67108864
-        problem_chars_max: 50000
-        instructions_chars_max: 20000
-        usage: { projects: 12, storage_bytes: 7340032000, running_runs: 1, running_runs_this_key: 1 }
+        reference_file_upload_bytes: 67108864
+        user_char_limit: 100000
+        usage: { projects: 12, storage_bytes: 7340032000, tool_runs: 1, running_runs: 1 }

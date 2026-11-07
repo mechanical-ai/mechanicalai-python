@@ -43,21 +43,33 @@ class LimitsUsage(BaseModel):
     projects: int
     """App and API projects alike, as the limit counts them."""
     storage_bytes: int
+    """The account's uploads and artifacts together."""
+    tool_runs: int
+    """The account's external tool runs in flight, app and API alike, as ``concurrent_tool_runs`` counts them."""
     running_runs: int
-    running_runs_this_key: int
+    """The account's API runs queued or running, across its keys."""
 
 
 class Limits(BaseModel):
-    """The account's limits and current counts."""
+    """The app's own numbers under the names its rules give them, plus the three that exist for the API alone
+    (``files_per_project``, ``storage_bytes``, ``requests_per_minute``)."""
 
     object: Literal["limits"] = "limits"
-    projects_per_account: int
+    projects_per_user: int
+    """Projects per account, app and API alike."""
     files_per_project: int
-    files_per_run: int
+    """Files an API project holds, pending uploads included."""
     storage_bytes: int
-    concurrent_runs_per_key: int
+    """The account's uploads and artifacts together."""
+    concurrent_tool_runs: int
+    """External tool runs in flight per account, app and API runs together."""
+    messages_per_minute: int
+    """Messages a minute per account, app messages and API runs together: the burst a create or a reply may hit
+    (429 ``rate_limited``, retried after ``Retry-After``)."""
     requests_per_minute: int
-    upload_bytes_max: int
-    problem_chars_max: int
-    instructions_chars_max: int
+    """Requests per key, enforced at the edge."""
+    reference_file_upload_bytes: int
+    """The app's reference-file limit: the multipart upload's bound."""
+    user_char_limit: int
+    """The engine's message bound: what it keeps of a longer ``problem``."""
     usage: LimitsUsage

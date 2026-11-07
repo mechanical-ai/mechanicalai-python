@@ -23,12 +23,9 @@ def _run_body(
     *,
     engine: str,
     problem: str,
-    budget_cents: int,
     files: Sequence[str] | None,
-    instructions: str | None,
     units: Units | None,
     language: Language | None,
-    allow_web: bool | None,
     end_user: str | None,
     metadata: Metadata | None,
     webhook_url: str | None,
@@ -37,12 +34,9 @@ def _run_body(
     return {
         "engine": engine,
         "problem": problem,
-        "budget_cents": budget_cents,
         "files": list(files) if files is not None else None,
-        "instructions": instructions,
         "units": units,
         "language": language,
-        "allow_web": allow_web,
         "end_user": end_user,
         "metadata": metadata,
         "webhook_url": webhook_url,
@@ -75,12 +69,9 @@ class Runs(SyncAPIResource):
         *,
         engine: str,
         problem: str,
-        budget_cents: int,
         files: Sequence[str] | None = None,
-        instructions: str | None = None,
         units: Units | None = None,
         language: Language | None = None,
-        allow_web: bool | None = None,
         end_user: str | None = None,
         metadata: Metadata | None = None,
         webhook_url: str | None = None,
@@ -88,21 +79,19 @@ class Runs(SyncAPIResource):
     ) -> Run:
         """Start a run on a project; it comes back ``queued``.
 
-        ``engine`` is ``"mekint"`` (``engine_version`` reports the snapshot that ran). ``budget_cents`` (at least
-        100) is the most the run may charge. ``files`` are ids of ``ready`` files in this project. One run at a time
-        per project: a second one answers 409 ``project_busy`` (``ProjectBusyError``).
+        ``engine`` is ``"mekint"`` (``engine_version`` reports the snapshot that ran). ``files`` are ids of ``ready``
+        files in this project. The run is charged as it works, like the app, from the API wallet; when the wallet
+        reaches zero it ends ``failed`` with ``failure.code == "insufficient_credit"``. One run at a time per
+        project: a second one answers 409 ``project_busy`` (``ProjectBusyError``).
         """
         body, request_id = self._client._post_json(
             f"/projects/{project_id}/runs",
             json=_run_body(
                 engine=engine,
                 problem=problem,
-                budget_cents=budget_cents,
                 files=files,
-                instructions=instructions,
                 units=units,
                 language=language,
-                allow_web=allow_web,
                 end_user=end_user,
                 metadata=metadata,
                 webhook_url=webhook_url,
@@ -117,13 +106,10 @@ class Runs(SyncAPIResource):
         *,
         engine: str,
         problem: str,
-        budget_cents: int,
         project_id: str | None = None,
         files: Sequence[str] | None = None,
-        instructions: str | None = None,
         units: Units | None = None,
         language: Language | None = None,
-        allow_web: bool | None = None,
         end_user: str | None = None,
         metadata: Metadata | None = None,
         webhook_url: str | None = None,
@@ -135,12 +121,9 @@ class Runs(SyncAPIResource):
             json=_run_body(
                 engine=engine,
                 problem=problem,
-                budget_cents=budget_cents,
                 files=files,
-                instructions=instructions,
                 units=units,
                 language=language,
-                allow_web=allow_web,
                 end_user=end_user,
                 metadata=metadata,
                 webhook_url=webhook_url,
@@ -176,17 +159,16 @@ class Runs(SyncAPIResource):
         *,
         text: str,
         files: Sequence[str] | None = None,
-        budget_cents: int | None = None,
         idempotency_key: str | None = None,
     ) -> Run:
         """Answer a ``needs_input`` run's question, once: a new run on the same project with ``parent_run_id`` set.
 
-        The new run inherits the parent's engine, units, language, allow_web, end_user, metadata and webhook_url;
-        ``files`` are added to the parent's and ``budget_cents`` defaults to the parent's.
+        The new run inherits the parent's engine, units, language, end_user, metadata and webhook_url; ``files``
+        are added to the parent's.
         """
         body, request_id = self._client._post_json(
             f"/runs/{run_id}/reply",
-            json={"text": text, "files": list(files) if files is not None else None, "budget_cents": budget_cents},
+            json={"text": text, "files": list(files) if files is not None else None},
             idempotent=True,
             idempotency_key=idempotency_key,
         )
@@ -235,12 +217,9 @@ class AsyncRuns(AsyncAPIResource):
         *,
         engine: str,
         problem: str,
-        budget_cents: int,
         files: Sequence[str] | None = None,
-        instructions: str | None = None,
         units: Units | None = None,
         language: Language | None = None,
-        allow_web: bool | None = None,
         end_user: str | None = None,
         metadata: Metadata | None = None,
         webhook_url: str | None = None,
@@ -252,12 +231,9 @@ class AsyncRuns(AsyncAPIResource):
             json=_run_body(
                 engine=engine,
                 problem=problem,
-                budget_cents=budget_cents,
                 files=files,
-                instructions=instructions,
                 units=units,
                 language=language,
-                allow_web=allow_web,
                 end_user=end_user,
                 metadata=metadata,
                 webhook_url=webhook_url,
@@ -272,13 +248,10 @@ class AsyncRuns(AsyncAPIResource):
         *,
         engine: str,
         problem: str,
-        budget_cents: int,
         project_id: str | None = None,
         files: Sequence[str] | None = None,
-        instructions: str | None = None,
         units: Units | None = None,
         language: Language | None = None,
-        allow_web: bool | None = None,
         end_user: str | None = None,
         metadata: Metadata | None = None,
         webhook_url: str | None = None,
@@ -290,12 +263,9 @@ class AsyncRuns(AsyncAPIResource):
             json=_run_body(
                 engine=engine,
                 problem=problem,
-                budget_cents=budget_cents,
                 files=files,
-                instructions=instructions,
                 units=units,
                 language=language,
-                allow_web=allow_web,
                 end_user=end_user,
                 metadata=metadata,
                 webhook_url=webhook_url,
@@ -331,17 +301,16 @@ class AsyncRuns(AsyncAPIResource):
         *,
         text: str,
         files: Sequence[str] | None = None,
-        budget_cents: int | None = None,
         idempotency_key: str | None = None,
     ) -> Run:
         """Answer a ``needs_input`` run's question, once: a new run on the same project with ``parent_run_id`` set.
 
-        The new run inherits the parent's engine, units, language, allow_web, end_user, metadata and webhook_url;
-        ``files`` are added to the parent's and ``budget_cents`` defaults to the parent's.
+        The new run inherits the parent's engine, units, language, end_user, metadata and webhook_url; ``files``
+        are added to the parent's.
         """
         body, request_id = await self._client._post_json(
             f"/runs/{run_id}/reply",
-            json={"text": text, "files": list(files) if files is not None else None, "budget_cents": budget_cents},
+            json={"text": text, "files": list(files) if files is not None else None},
             idempotent=True,
             idempotency_key=idempotency_key,
         )

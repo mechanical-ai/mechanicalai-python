@@ -41,8 +41,8 @@ def test_creates_get_a_generated_key(api: respx.MockRouter, client: Client) -> N
     )
 
     client.projects.create()
-    client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100)
-    client.runs.create_in_new_project(engine="mekint", problem="x", budget_cents=100)
+    client.runs.create("prj_1", engine="mekint", problem="x")
+    client.runs.create_in_new_project(engine="mekint", problem="x")
     client.runs.reply("run_1", text="Steel, 10 mm.")
     client.files.upload("prj_1", b"solid", name="part.stl")
     client.files.create_upload_url("prj_1", name="big.step", size=10, content_type="model/step")
@@ -55,7 +55,7 @@ def test_creates_get_a_generated_key(api: respx.MockRouter, client: Client) -> N
 
 def test_caller_provided_key_is_sent_as_is(api: respx.MockRouter, client: Client) -> None:
     route = api.post("/projects/prj_1/runs").mock(return_value=httpx.Response(202, json=RUN_QUEUED))
-    client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100, idempotency_key="order-4471:run.1")
+    client.runs.create("prj_1", engine="mekint", problem="x", idempotency_key="order-4471:run.1")
     assert route.calls.last.request.headers["idempotency-key"] == "order-4471:run.1"
 
 
@@ -117,7 +117,7 @@ def test_lost_or_superseded_is_raised_never_resent(
         return_value=httpx.Response(409, json=error_body("conflict_error", code, "The answer was lost."))
     )
     with pytest.raises(expected) as info:
-        client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100, idempotency_key=given)
+        client.runs.create("prj_1", engine="mekint", problem="x", idempotency_key=given)
     assert info.value.code == code
     assert isinstance(info.value, ConflictError)
     assert "list the project's runs" in str(info.value)
@@ -139,7 +139,7 @@ def test_other_409s_are_not_retried_even_with_a_key(api: respx.MockRouter, clien
         return_value=httpx.Response(409, json=error_body("conflict_error", "project_busy"))
     )
     with pytest.raises(ConflictError):
-        client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100)
+        client.runs.create("prj_1", engine="mekint", problem="x")
     assert route.call_count == 1
 
 

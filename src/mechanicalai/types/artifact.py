@@ -5,13 +5,13 @@ from typing import Literal
 
 from mechanicalai.types._base import BaseModel
 
-ArtifactKind = Literal["report", "document", "model", "table", "data", "image"]
+ArtifactKind = Literal["document", "model", "table", "data", "image"]
 
 
 class Artifact(BaseModel):
     """One deliverable a run produced, in one or more formats.
 
-    Formats by kind: report md, pdf; document md, pdf, docx; model step, stl, glb, native; table csv, xlsx;
+    Formats by kind: document md, pdf, docx; model step, stl, glb, native; table csv, xlsx;
     data vtu, csv, json; image png.
     """
 
@@ -20,7 +20,7 @@ class Artifact(BaseModel):
     project_id: str
     run_id: str
     kind: ArtifactKind | str
-    """One of the six known kinds; an unknown kind is passed through."""
+    """One of the five known kinds; an unknown kind is passed through."""
     name: str
     """The engine's name for it, stable across follow-ups when it is the same thing."""
     formats: list[str] = []

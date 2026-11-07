@@ -18,7 +18,6 @@ def test_create_sends_only_what_was_given(api: respx.MockRouter, client: Client)
         "prj_1",
         engine="mekint",
         problem="Design a bracket.",
-        budget_cents=3000,
         files=("file_1",),
         units="metric",
         end_user="plant-3",
@@ -27,7 +26,6 @@ def test_create_sends_only_what_was_given(api: respx.MockRouter, client: Client)
     assert json.loads(route.calls.last.request.content) == {
         "engine": "mekint",
         "problem": "Design a bracket.",
-        "budget_cents": 3000,
         "files": ["file_1"],
         "units": "metric",
         "end_user": "plant-3",
@@ -40,14 +38,13 @@ def test_create_sends_only_what_was_given(api: respx.MockRouter, client: Client)
 
 def test_create_in_new_project(api: respx.MockRouter, client: Client) -> None:
     route = api.post("/runs").mock(return_value=httpx.Response(202, json=RUN_QUEUED))
-    client.runs.create_in_new_project(engine="mekint", problem="x", budget_cents=100, allow_web=True)
+    client.runs.create_in_new_project(engine="mekint", problem="x", language="ko")
     assert json.loads(route.calls.last.request.content) == {
         "engine": "mekint",
         "problem": "x",
-        "budget_cents": 100,
-        "allow_web": True,
+        "language": "ko",
     }
-    client.runs.create_in_new_project(engine="mekint", problem="x", budget_cents=100, project_id="prj_9")
+    client.runs.create_in_new_project(engine="mekint", problem="x", project_id="prj_9")
     assert json.loads(route.calls.last.request.content)["project_id"] == "prj_9"
 
 
@@ -62,7 +59,9 @@ def test_retrieve_list_cancel_reply(api: respx.MockRouter, client: Client) -> No
     )
 
     run = client.runs.retrieve("run_1")
-    assert run.is_terminal and run.cost_cents == 1420 and run.report_artifact_id == "art_01jc5201"
+    assert run.is_terminal and run.cost_cents == 1420 and run.summary and run.next_actions
+    assert run.message is not None and run.message.startswith(run.summary)
+    assert "budget_cents" not in run.to_dict() and "report_artifact_id" not in run.to_dict()
     assert run.duration_s == 562 and run.engine_version == "mekint-20261105"
     assert [r.status for r in client.runs.list("prj_1")] == ["succeeded", "queued"]
 
@@ -70,9 +69,9 @@ def test_retrieve_list_cancel_reply(api: respx.MockRouter, client: Client) -> No
     assert cancelled.cancel_requested is True
     assert cancel.calls.last.request.content == b""
 
-    answer = client.runs.reply("run_1", text="Steel, 10 mm.", budget_cents=2000)
+    answer = client.runs.reply("run_1", text="Steel, 10 mm.")
     assert answer.parent_run_id == "run_1"
-    assert json.loads(reply.calls.last.request.content) == {"text": "Steel, 10 mm.", "budget_cents": 2000}
+    assert json.loads(reply.calls.last.request.content) == {"text": "Steel, 10 mm."}
 
 
 def test_wait_polls_until_terminal(api: respx.MockRouter, client: Client, sleeps: list[float]) -> None:
@@ -103,7 +102,7 @@ def test_needs_input_is_terminal_for_wait(api: respx.MockRouter, client: Client,
     )
     run = client.runs.wait("run_1")
     assert run.status == "needs_input" and run.question == "Steel or aluminium?"
-    assert TERMINAL_RUN_STATUSES == {"needs_input", "succeeded", "budget_exhausted", "failed", "cancelled"}
+    assert TERMINAL_RUN_STATUSES == {"needs_input", "succeeded", "failed", "cancelled"}
 
 
 def test_failure_is_parsed(api: respx.MockRouter, client: Client) -> None:
@@ -125,6 +124,20 @@ def test_failure_is_parsed(api: respx.MockRouter, client: Client) -> None:
         )
     )
     assert client.runs.retrieve("run_2").failure.code == "engine_gave_up"  # type: ignore[union-attr]
+    api.get("/runs/run_3").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **RUN_RUNNING,
+                "status": "failed",
+                "cost_cents": 1240,
+                "failure": {"code": "insufficient_credit", "message": "The account ran out of credit."},
+            },
+        )
+    )
+    stopped = client.runs.retrieve("run_3")
+    assert stopped.is_terminal and stopped.status == "failed" and stopped.message is None
+    assert stopped.failure is not None and stopped.failure.code == "insufficient_credit"
 
 
 def test_unknown_fields_are_kept(api: respx.MockRouter, client: Client) -> None:
@@ -161,7 +174,7 @@ def test_engines_usage_limits(api: respx.MockRouter, client: Client) -> None:
     engines = client.engines.list()
     assert engines.data[0].id == "mekint" and engines.data[0].snapshot == "mekint-20261105"
     assert engines.data[0].status == "current"
-    report = client.usage.retrieve(
+    window = client.usage.retrieve(
         period="month", from_=datetime(2026, 11, 1, tzinfo=timezone.utc), group_by="end_user"
     )
     assert dict(usage.calls.last.request.url.params) == {
@@ -169,12 +182,14 @@ def test_engines_usage_limits(api: respx.MockRouter, client: Client) -> None:
         "from": "2026-11-01T00:00:00Z",
         "group_by": "end_user",
     }
-    assert report.runs == 14 and report.by_end_user["plant-3"].cost_cents == 31810
-    assert report.buckets[0].runs == 14 and report.buckets[0].from_.month == 11
-    assert report.from_.year == 2026 and report.to_dict()["from"] == "2026-11-01T00:00:00Z"
+    assert window.runs == 14 and window.by_end_user["plant-3"].cost_cents == 31810
+    assert window.buckets[0].runs == 14 and window.buckets[0].from_.month == 11
+    assert window.from_.year == 2026 and window.to_dict()["from"] == "2026-11-01T00:00:00Z"
     limits = client.usage.limits()
-    assert limits.upload_bytes_max == 67108864 and limits.files_per_run == 50
-    assert limits.usage.running_runs == 1 and limits.usage.running_runs_this_key == 1
+    assert limits.reference_file_upload_bytes == 67108864 and limits.files_per_project == 200
+    assert limits.projects_per_user == 100 and limits.concurrent_tool_runs == 4 and limits.user_char_limit == 100000
+    assert limits.messages_per_minute == 10
+    assert limits.usage.running_runs == 1 and limits.usage.tool_runs == 1 and limits.usage.projects == 12
 
 
 async def test_async_create_and_wait(api: respx.MockRouter, async_client: AsyncClient, sleeps: list[float]) -> None:
@@ -182,7 +197,7 @@ async def test_async_create_and_wait(api: respx.MockRouter, async_client: AsyncC
     api.get("/runs/run_01jc5000a1b2").mock(
         side_effect=[httpx.Response(200, json=RUN_RUNNING), httpx.Response(200, json=RUN_SUCCEEDED)]
     )
-    run = await async_client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100)
+    run = await async_client.runs.create("prj_1", engine="mekint", problem="x")
     done = await async_client.runs.wait(run.id, poll_interval=1)
     assert done.status == "succeeded"
     assert sleeps == [1]

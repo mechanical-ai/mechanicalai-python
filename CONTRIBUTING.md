@@ -51,7 +51,7 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `fe
 `CHANGELOG.md` when the change is visible to users.
 
 This repository is public. Nothing internal, no secrets, no real keys: example keys look like
-`mk_test_000000000000000000000000000000000000test`, example addresses like `test@company.com`.
+`mk_0000000000000000000000000000000000000000`, example addresses like `test@company.com`.
 
 ## Releasing
 

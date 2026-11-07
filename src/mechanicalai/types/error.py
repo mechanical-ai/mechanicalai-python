@@ -15,6 +15,6 @@ class ErrorObject(pydantic.BaseModel):
     param: str | None = None
     request_id: str | None = None
     limit: int | None = None
-    """On project_limit_reached, file_limit_reached, storage_quota_reached and concurrency_limit_reached."""
+    """On project_limit_reached, file_limit_reached and storage_quota_reached."""
     count: int | None = None
     """On the same codes."""

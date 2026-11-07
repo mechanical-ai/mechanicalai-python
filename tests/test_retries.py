@@ -100,7 +100,7 @@ def test_409_is_not_retried(api: respx.MockRouter, client: Client, sleeps: list[
         return_value=httpx.Response(409, json=error_body("conflict_error", "project_limit_reached"))
     )
     with pytest.raises(ConflictError):
-        client.runs.create("prj_1", engine="mekint", problem="x", budget_cents=100)
+        client.runs.create("prj_1", engine="mekint", problem="x")
     assert route.call_count == 1
 
 
@@ -225,6 +225,26 @@ def test_creates_keep_their_key_and_stay_retryable(api: respx.MockRouter, client
     assert route.call_count == 2
     keys = {c.request.headers["idempotency-key"] for c in route.calls}
     assert len(keys) == 1
+
+
+def test_a_burst_429_on_a_create_is_retried_after_retry_after(
+    api: respx.MockRouter, client: Client, sleeps: list[float]
+) -> None:
+    """The account's message burst answers a create or a reply with 429 ``rate_limited``; retried like any 429."""
+    route = api.post("/projects/prj_1/runs").mock(
+        side_effect=[
+            httpx.Response(
+                429,
+                json=error_body("rate_limit_error", "rate_limited", "Too many requests at once. Please wait a moment."),
+                headers={"Retry-After": "60"},
+            ),
+            httpx.Response(202, json=RUN_QUEUED),
+        ]
+    )
+    run = client.runs.create("prj_1", engine="mekint", problem="x")
+    assert run.status == "queued" and route.call_count == 2
+    assert sleeps == [60.0]
+    assert len({c.request.headers["idempotency-key"] for c in route.calls}) == 1
 
 
 async def test_async_cancel_is_not_resent_after_a_500(
