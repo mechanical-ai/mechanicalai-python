@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The format is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Python 3.14 and 3.15 in the test matrix and the classifiers.
+
 ## [0.0.4] - 2026-11-07
 
 The API is the app driven by a script, and the library follows: what the API had on top of the app is gone.
