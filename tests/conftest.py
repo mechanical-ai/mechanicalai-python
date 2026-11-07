@@ -49,7 +49,7 @@ RUN_QUEUED: dict[str, Any] = {
     "engine_version": None,
     "status": "queued",
     "cancel_requested": False,
-    "problem": "Design a steel bracket that mounts the 12 kg motor ...",
+    "problem": "Cast aluminium bracket for a 12 kg motor ...",
     "files": ["file_01jc4y1n8r3t"],
     "units": "metric",
     "language": "en",
